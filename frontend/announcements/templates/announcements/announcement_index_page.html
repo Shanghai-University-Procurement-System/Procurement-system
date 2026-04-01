@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% load static wagtailcore_tags %}
+
+{% block body_class %}announcement-index-page{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="container">
+        <h1>{{ page.title }}</h1>
+        {% if page.intro %}
+        <div class="intro">{{ page.intro|richtext }}</div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="announcement-section">
+    <div class="container">
+        {% if user.is_authenticated %}
+        <!-- 搜索框 -->
+        <div class="search-bar">
+            <form method="get" action="">
+                <input type="text" name="search" placeholder="请输入关键字搜索..." value="{{ request.GET.search }}">
+                <button type="submit">搜索</button>
+            </form>
+        </div>
+        {% else %}
+        <!-- 未登录提示 -->
+        <div class="login-prompt-card">
+            <h3>需要登录才能使用完整功能</h3>
+            <p>登录后您可以使用搜索、筛选和收藏等功能，获取更好的浏览体验</p>
+            <a href="{% url 'account_login' %}?next={{ request.path }}" class="login-btn">立即登录</a>
+        </div>
+        {% endif %}
+
+        {% if user.is_authenticated %}
+        <!-- 筛选区域 -->
+        <div class="filter-section">
+            <form method="get" action="" id="filterForm">
+                <!-- 时间筛选 -->
+                <div class="filter-group">
+                    <label>时间筛选：</label>
+                    <div class="filter-options">
+                        <button type="submit" name="time" value=""
+                            class="filter-btn {% if not request.GET.time %}active{% endif %}">全部</button>
+                        <button type="submit" name="time" value="today"
+                            class="filter-btn {% if request.GET.time == 'today' %}active{% endif %}">今日</button>
+                        <button type="submit" name="time" value="month"
+                            class="filter-btn {% if request.GET.time == 'month' %}active{% endif %}">一个月</button>
+                        <button type="submit" name="time" value="three_months"
+                            class="filter-btn {% if request.GET.time == 'three_months' %}active{% endif %}">近三月</button>
+                        <button type="submit" name="time" value="six_months"
+                            class="filter-btn {% if request.GET.time == 'six_months' %}active{% endif %}">近半年</button>
+                        <button type="submit" name="time" value="year"
+                            class="filter-btn {% if request.GET.time == 'year' %}active{% endif %}">近一年</button>
+                    </div>
+                </div>
+
+                <!-- 信息类型筛选 -->
+                <div class="filter-group">
+                    <label>信息类型：</label>
+                    <div class="filter-options">
+                        <button type="submit" name="type" value=""
+                            class="filter-btn {% if not request.GET.type %}active{% endif %}">全部</button>
+                        <button type="submit" name="type" value="winning_bid"
+                            class="filter-btn {% if request.GET.type == 'winning_bid' %}active{% endif %}">中标公告</button>
+                        <button type="submit" name="type" value="public_bidding"
+                            class="filter-btn {% if request.GET.type == 'public_bidding' %}active{% endif %}">公开招标公告</button>
+                        <button type="submit" name="type" value="competitive_negotiation"
+                            class="filter-btn {% if request.GET.type == 'competitive_negotiation' %}active{% endif %}">竞争性谈判公告</button>
+                        <button type="submit" name="type" value="correction"
+                            class="filter-btn {% if request.GET.type == 'correction' %}active{% endif %}">更正公告</button>
+                        <button type="submit" name="type" value="competitive_consultation"
+                            class="filter-btn {% if request.GET.type == 'competitive_consultation' %}active{% endif %}">竞争性磋商公告</button>
+                        <button type="submit" name="type" value="transaction"
+                            class="filter-btn {% if request.GET.type == 'transaction' %}active{% endif %}">成交公告</button>
+                        <button type="submit" name="type" value="other"
+                            class="filter-btn {% if request.GET.type == 'other' %}active{% endif %}">其他公告</button>
+                        <button type="submit" name="type" value="termination"
+                            class="filter-btn {% if request.GET.type == 'termination' %}active{% endif %}">终止公告</button>
+                        <button type="submit" name="type" value="qualification"
+                            class="filter-btn {% if request.GET.type == 'qualification' %}active{% endif %}">资格预审公告</button>
+                        <button type="submit" name="type" value="inquiry"
+                            class="filter-btn {% if request.GET.type == 'inquiry' %}active{% endif %}">询价公告</button>
+                    </div>
+                </div>
+
+
+                <!-- 地区筛选 -->
+                <div class="filter-group">
+                    <label>地区筛选：</label>
+                    <select name="region" onchange="this.form.submit()">
+                        <option value="">全部</option>
+
+                        {% for code, name in region_choices %}
+                        {% if code != 'all' %}
+                        <option value="{{ code }}" {% if request.GET.region == code %}selected{% endif %}>{{ name }}
+                        </option>
+                        {% endif %}
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- 金额筛选 -->
+                <div class="filter-group">
+                    <label>金额筛选：</label>
+                    <div class="filter-options">
+                        <button type="submit" name="amount" value=""
+                            class="filter-btn {% if not request.GET.amount %}active{% endif %}">全部</button>
+                        <button type="submit" name="amount" value="below_1"
+                            class="filter-btn {% if request.GET.amount == 'below_1' %}active{% endif %}">1万以下</button>
+                        <button type="submit" name="amount" value="1_10"
+                            class="filter-btn {% if request.GET.amount == '1_10' %}active{% endif %}">1万到10万</button>
+                        <button type="submit" name="amount" value="10_100"
+                            class="filter-btn {% if request.GET.amount == '10_100' %}active{% endif %}">10万到100万</button>
+                        <button type="submit" name="amount" value="100_500"
+                            class="filter-btn {% if request.GET.amount == '100_500' %}active{% endif %}">100万到500万</button>
+                        <button type="submit" name="amount" value="above_500"
+                            class="filter-btn {% if request.GET.amount == 'above_500' %}active{% endif %}">500万以上</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+        {% endif %}
+
+        <!-- 结果统计 -->
+        <div class="result-stats">
+            <p>共找到 <strong>{{ total_count }}</strong> 条数据</p>
+        </div>
+
+        <!-- 公告列表 -->
+        <div class="announcement-list">
+            {% for announcement in announcements %}
+            <div class="announcement-item">
+                <div class="announcement-item-header">
+                    <h3 class="announcement-title">
+                        <a href="{% pageurl announcement %}">{{ announcement.title }}</a>
+                    </h3>
+                    <span class="announcement-date">发布时间：{{ announcement.date|date:"Y-m-d" }}</span>
+                </div>
+                <div class="announcement-tags">
+                    <span class="tag tag-type type-{{ announcement.announcement_type }}">
+                        {{ announcement.get_announcement_type_display }}
+                    </span>
+                    {% if announcement.procurement_category %}
+                    <span class="tag tag-category">{{ announcement.get_procurement_category_display }}</span>
+                    {% endif %}
+                    {% if announcement.purchase_amount_wan %}
+                    <span class="tag tag-amount">{{ announcement.purchase_amount_wan|floatformat:2 }}万元</span>
+                    {% endif %}
+                    {% if announcement.region %}
+                    <span class="tag tag-region">{{ announcement.get_region_display }}{% if announcement.city %}-{{
+                        announcement.city }}{% endif %}</span>
+
+
+                    {% endif %}
+                    {% if announcement.publisher %}
+                    <span class="tag tag-info">采购方: {{ announcement.publisher }}</span>
+                    {% endif %}
+                    {% if announcement.supplier %}
+                    <span class="tag tag-info">供应商: {{ announcement.supplier }}</span>
+                    {% endif %}
+                </div>
+                {% if user.is_authenticated %}
+                <div class="announcement-actions">
+                    <button class="favorite-btn" data-id="{{ announcement.id }}">收藏</button>
+                </div>
+                {% endif %}
+            </div>
+            {% empty %}
+            <p class="no-results">暂无公告</p>
+            {% endfor %}
+        </div>
+
+        <!-- 分页 -->
+        {% if announcements.has_other_pages %}
+        <div class="pagination">
+            {% if announcements.has_previous %}
+            <a
+                href="?page={{ announcements.previous_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">上一页</a>
+            {% endif %}
+
+            <span class="current-page">第 {{ announcements.number }} 页 / 共 {{ announcements.paginator.num_pages }}
+                页</span>
+
+            {% if announcements.has_next %}
+            <a
+                href="?page={{ announcements.next_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">下一页</a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
