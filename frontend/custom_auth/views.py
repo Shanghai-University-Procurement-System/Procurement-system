@@ -121,3 +121,28 @@ def password_reset_verify(request):
 
 def password_reset_complete(request):
     return render(request, 'custom_auth/password_reset_complete.html')
+
+
+# custom_auth/views.py
+from django.http import JsonResponse
+from django.contrib.auth.decorators import login_required
+import jwt  # 需要 pip install pyjwt
+from datetime import datetime, timedelta
+
+# 这里的秘钥必须和 FastAPI 中 auth.py 的 SECRET_KEY 保持绝对一致！
+FASTAPI_SECRET_KEY = "V_hP4A1f_YJ0_lUq-oE9sHwWvC8bZpD7tRn5M2x_G-g"
+
+
+def get_fastapi_token(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "未登录"}, status=401)
+
+    user = request.user
+    payload = {
+        "sub": str(user.id),  # Django 的 ID 转成字符串
+        "username": user.username,  # 把用户名也塞进去
+        "type": "access",
+        "exp": datetime.utcnow() + timedelta(days=7)
+    }
+    token = jwt.encode(payload, FASTAPI_SECRET_KEY, algorithm="HS256")
+    return JsonResponse({"access_token": token, "token_type": "bearer"})

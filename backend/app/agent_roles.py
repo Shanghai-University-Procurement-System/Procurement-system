@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from .config import Settings
-from .database import ToolRecord, get_active_prompt_for_agent
+from .database import ToolRecord
 from .graph_agent import invoke_llm, parse_json_from_llm
 from .rag_service import retrieve_context
 from .shared_workspace import MultiAgentState, SharedWorkspace
@@ -21,80 +21,56 @@ from .tool_service import execute_tool
 logger = logging.getLogger(__name__)
 
 
-# ==================== Prompt管理辅助函数 ====================
-
 def get_agent_prompt(
-    agent_id: str,
-    session: Session,
-    default_prompt: str,
-    **kwargs
+        default_prompt: str,
+        **kwargs
 ) -> str:
     """
-    获取智能体的激活prompt模板
-    
+    获取智能体的prompt并替换占位符
+
     Args:
-        agent_id: 智能体ID
-        session: 数据库会话
-        default_prompt: 默认prompt（如果数据库中没有激活的模板，使用这个）
+        default_prompt: 硬编码的默认prompt模板
         **kwargs: 用于替换prompt中的占位符，如 user_query, task_description 等
-    
+
     Returns:
         处理后的prompt字符串
     """
-    try:
-        # 尝试从数据库获取激活的prompt
-        template = get_active_prompt_for_agent(session, agent_id)
-        
-        if template and template.is_active:
-            prompt = template.content
-            logger.info(f"✅ [Prompt管理] 使用数据库中的激活模板: {template.name} (ID: {template.id})")
-        else:
-            prompt = default_prompt
-            logger.info(f"ℹ️ [Prompt管理] 使用默认硬编码prompt (智能体: {agent_id})")
-    except Exception as e:
-        logger.warning(f"⚠️ [Prompt管理] 获取prompt失败，使用默认prompt: {e}")
-        prompt = default_prompt
-    
-    # 替换占位符（增强版）
+    prompt = default_prompt
+
+    # 替换占位符
     try:
         import re
-        
+
         # 1. 先替换双花括号为单花括号（兼容性处理）
-        # 处理 {{variable}} 格式（Python f-string 转义）
         prompt = prompt.replace("{{", "{").replace("}}", "}")
-        
+
         # 2. 替换常见的占位符
-        prompt = prompt.replace("{user_query}", kwargs.get("user_query", ""))
-        prompt = prompt.replace("{task_description}", kwargs.get("task_description", ""))
-        prompt = prompt.replace("{analysis_context}", kwargs.get("analysis_context", ""))
-        prompt = prompt.replace("{full_context}", kwargs.get("full_context", ""))
-        prompt = prompt.replace("{final_answer}", kwargs.get("final_answer", ""))
-        
+        prompt = prompt.replace("{user_query}", str(kwargs.get("user_query", "")))
+        prompt = prompt.replace("{task_description}", str(kwargs.get("task_description", "")))
+        prompt = prompt.replace("{analysis_context}", str(kwargs.get("analysis_context", "")))
+        prompt = prompt.replace("{full_context}", str(kwargs.get("full_context", "")))
+        prompt = prompt.replace("{final_answer}", str(kwargs.get("final_answer", "")))
+
         # 3. 替换其他自定义占位符
         for key, value in kwargs.items():
             placeholder = f"{{{key}}}"
             if placeholder in prompt:
                 prompt = prompt.replace(placeholder, str(value))
-        
+
         # 4. 检查未替换的占位符（警告）
         unmatched = re.findall(r'\{(\w+)\}', prompt)
         if unmatched:
             # 过滤掉已经替换的占位符
-            replaced_placeholders = ["user_query", "task_description", "analysis_context", 
-                                   "full_context", "final_answer"] + list(kwargs.keys())
+            replaced_placeholders = ["user_query", "task_description", "analysis_context",
+                                     "full_context", "final_answer"] + list(kwargs.keys())
             truly_unmatched = [p for p in unmatched if p not in replaced_placeholders]
-            
+
             if truly_unmatched:
-                logger.warning(f"⚠️ [Prompt管理] 未替换的占位符: {truly_unmatched}")
-                # 可以选择移除未替换的占位符，或保留（这里选择保留并记录警告）
-                for var in truly_unmatched:
-                    # 保留占位符，但添加警告标记（可选）
-                    # prompt = prompt.replace(f"{{{var}}}", f"[占位符{var}未定义]")
-                    pass
-        
+                logger.warning(f"⚠️ [Prompt处理] 未替换的占位符: {truly_unmatched}")
+
     except Exception as e:
-        logger.warning(f"⚠️ [Prompt管理] 替换占位符时出错: {e}")
-    
+        logger.warning(f"⚠️ [Prompt处理] 替换占位符时出错: {e}")
+
     return prompt
 
 
@@ -677,8 +653,6 @@ async def analysis_specialist_node(
         
         # 从数据库获取激活的prompt，如果没有则使用默认prompt
         analysis_prompt = get_agent_prompt(
-            agent_id="analysis_specialist",
-            session=session,
             default_prompt=default_analysis_prompt,
             user_query=user_query,
             task_description=task_description,
@@ -939,8 +913,6 @@ async def summarization_specialist_node(
         
         # 从数据库获取激活的prompt，如果没有则使用默认prompt
         summarization_prompt = get_agent_prompt(
-            agent_id="summarization_specialist",
-            session=session,
             default_prompt=default_summarization_prompt,
             user_query=user_query,
             task_description=task_description,
@@ -1245,8 +1217,6 @@ async def verification_specialist_node(
         
         # 从数据库获取激活的prompt，如果没有则使用默认prompt
         verification_prompt = get_agent_prompt(
-            agent_id="verification_specialist",
-            session=session,
             default_prompt=default_verification_prompt,
             final_answer=final_answer
         )
