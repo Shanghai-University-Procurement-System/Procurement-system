@@ -307,6 +307,73 @@ class PurchaseIntention(Orderable):
     ]
 
 
+class TopBuyerAnalysis(Orderable):
+    """各单位采购情况分析 (Top 5)"""
+    page = ParentalKey('ReportPage', related_name='top_buyers')
+    buyer_name = models.CharField(max_length=255, verbose_name="采购单位")
+    region = models.CharField(max_length=100, verbose_name="所属地区", blank=True, default="-")
+    project_count = models.IntegerField(verbose_name="项目数(项)", default=0)
+    budget_amount = models.CharField(max_length=50, verbose_name="预算金额(万元)", blank=True, default="-")
+    transaction_amount = models.CharField(max_length=50, verbose_name="成交金额(万元)", blank=True, default="-")
+
+    panels = [
+        FieldPanel('buyer_name'),
+        FieldPanel('region'),
+        FieldPanel('project_count'),
+        FieldPanel('budget_amount'),
+        FieldPanel('transaction_amount'),
+    ]
+
+
+class RegionPurchaseData(Orderable):
+    """各地区采购项目数据（用于图表展示）"""
+    page = ParentalKey('ReportPage', related_name='region_purchase_data')
+    region_name = models.CharField(max_length=50, verbose_name="地区名称", help_text="例如：浙江、湖南、四川")
+    purchase_amount = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="采购金额(万元)", default=0)
+    project_count = models.IntegerField(verbose_name="项目数量(个)", default=0)
+
+    panels = [
+        FieldPanel('region_name'),
+        FieldPanel('purchase_amount'),
+        FieldPanel('project_count'),
+    ]
+
+    class Meta(Orderable.Meta):
+        verbose_name = "地区采购数据"
+
+
+class TopSupplierShare(Orderable):
+    """成交前5名供应商市场份额占比"""
+    page = ParentalKey('ReportPage', related_name='top_suppliers')
+    supplier_name = models.CharField(max_length=255, verbose_name="供应商名称")
+    project_count_percent = models.DecimalField(max_digits=6, decimal_places=2, verbose_name="项目数量占比(%)", default=0)
+    transaction_amount_percent = models.DecimalField(max_digits=6, decimal_places=2, verbose_name="成交金额占比(%)", default=0)
+
+    panels = [
+        FieldPanel('supplier_name'),
+        FieldPanel('project_count_percent'),
+        FieldPanel('transaction_amount_percent'),
+    ]
+
+    class Meta(Orderable.Meta):
+        verbose_name = "供应商市场份额"
+
+
+class ProcurementMethodShare(Orderable):
+    """各采购方式项目数量占比"""
+    page = ParentalKey('ReportPage', related_name='procurement_methods')
+    method_name = models.CharField(max_length=100, verbose_name="采购方式", help_text="例如：公开招标、竞争性磋商、单一来源")
+    project_count_percent = models.DecimalField(max_digits=6, decimal_places=2, verbose_name="项目数量占比(%)", default=0)
+
+    panels = [
+        FieldPanel('method_name'),
+        FieldPanel('project_count_percent'),
+    ]
+
+    class Meta(Orderable.Meta):
+        verbose_name = "采购方式占比"
+
+
 class ReportPage(Page):
     template = "reports/report_page_v3.html"
     
@@ -337,8 +404,14 @@ class ReportPage(Page):
     
     # New analysis text fields
     market_supply_analysis = models.TextField(blank=True, verbose_name='市场供给分析')
-    market_trend_analysis = models.TextField(blank=True, verbose_name='市场交易趋势')
     ai_summary_analysis = models.TextField(blank=True, verbose_name='AI总结分析')
+
+    # 市场供给分析 - 统计卡片字段
+    stat_buyer_count = models.CharField(max_length=50, blank=True, default='', verbose_name='采购单位数量', help_text='例如：268 家')
+    stat_region_count = models.CharField(max_length=50, blank=True, default='', verbose_name='采购地区数量', help_text='例如：31 个地区')
+    stat_budget_total = models.CharField(max_length=50, blank=True, default='', verbose_name='预算金额', help_text='例如：153,674 万元')
+    stat_transaction_total = models.CharField(max_length=50, blank=True, default='', verbose_name='成交总额', help_text='例如：125,809 万元')
+    stat_announcement_count = models.CharField(max_length=50, blank=True, default='', verbose_name='采购公告数量', help_text='例如：4235 条')
 
     summary = RichTextField(blank=True, verbose_name='报告摘要')
     content = RichTextField(blank=True, verbose_name='报告内容')
@@ -375,9 +448,17 @@ class ReportPage(Page):
         InlinePanel('purchase_intentions', label="采购意向"),
         InlinePanel('historical_projects', label="历史成交项目"),
         InlinePanel('ongoing_projects', label="进行中项目"),
+        InlinePanel('top_buyers', label="各单位采购情况分析 (前5名)"),
+        InlinePanel('region_purchase_data', label="各地区采购数据 (图表)"),
+        InlinePanel('top_suppliers', label="供应商市场份额占比 (前5名)"),
+        InlinePanel('procurement_methods', label="采购方式占比"),
         FieldPanel('market_supply_analysis'),
-        FieldPanel('market_trend_analysis'),
         FieldPanel('ai_summary_analysis'),
+        FieldPanel('stat_buyer_count'),
+        FieldPanel('stat_region_count'),
+        FieldPanel('stat_budget_total'),
+        FieldPanel('stat_transaction_total'),
+        FieldPanel('stat_announcement_count'),
     ]
 
 

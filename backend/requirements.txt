@@ -21,6 +21,7 @@ tiktoken==0.7.0
 
 # 数据库
 sqlalchemy==2.0.25
+pymysql>=1.1,<2
 
 # 文件处理
 python-multipart==0.0.9

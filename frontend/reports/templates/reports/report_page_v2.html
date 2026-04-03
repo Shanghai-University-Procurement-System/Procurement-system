@@ -95,7 +95,6 @@
                 <li class="nav-item" onclick="switchTab(this, 'historical')">历史成交项目({{ page.historical_projects.count
                     }})</li>
                 <li class="nav-item" onclick="switchTab(this, 'ongoing')">进行中项目({{ page.ongoing_projects.count }})</li>
-                <li class="nav-item" onclick="switchTab(this, 'trends')">市场交易趋势</li>
                 <li class="nav-item" onclick="switchTab(this, 'intentions')">采购意向({{ page.purchase_intentions.count }})
                 </li>
                 <li class="nav-item" onclick="switchTab(this, 'announcements')">采购公告({{ page.report_announcements.count
@@ -176,15 +175,6 @@
                     </div>
                 </div>
                 <div class="view-detail" style="display: none;"></div>
-            </div>
-
-            <!-- Tab: Trends -->
-            <div id="tab-trends" class="tab-content" style="display: none;">
-                <h3>市场交易趋势</h3>
-                <div class="analysis-content"
-                    style="margin-top: 20px; line-height: 1.8; color: #333; min-height: 200px;">
-                    {{ page.market_trend_analysis|linebreaksbr|default:"暂无分析内容 (请在后台添加)" }}
-                </div>
             </div>
 
             <!-- Tab: Intentions -->

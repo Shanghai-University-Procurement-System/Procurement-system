@@ -594,7 +594,7 @@
         setProgress(75, 'AI 智能体正在进行数据检索与深度分析 (请耐心等待)...');
 
         // 发起真实请求到 Django 桥梁视图
-        fetch('/reports/api/run-agent/', {
+        fetch('{% url "run_agent" %}', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
