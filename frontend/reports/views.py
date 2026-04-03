@@ -14,6 +14,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from wagtail.models import Page
 from .models import ReportIndexPage, ReportPage
+from custom_auth.tokens import build_fastapi_access_token
 
 
 @csrf_exempt
@@ -37,10 +38,12 @@ def run_ai_agent_and_create_report(request):
                 "use_tools": True,
                 "execution_mode": "sequential"
             }
+            access_token = build_fastapi_access_token(request.user)
+            headers = {"Authorization": f"Bearer {access_token}"}
 
             # 设置较长的 timeout，因为多智能体执行需要时间
             with httpx.Client(timeout=300.0) as client:
-                response = client.post(fastapi_url, json=payload)
+                response = client.post(fastapi_url, json=payload, headers=headers)
                 response.raise_for_status()
                 agent_result = response.json()
 
