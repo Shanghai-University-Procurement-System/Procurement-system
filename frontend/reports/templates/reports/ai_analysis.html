@@ -487,18 +487,15 @@
     }
     drawParticles();
 
-    // ===== 联想词逻辑 =====
-    var keyword = '{{ keyword|escapejs }}';
-    var suffixes = [
-        '服务', '产品', '采购', '项目', '业务',
-        '保障', '方案', '合约', '合同', '协议'
-    ];
-    var associatedWords = [];
-    for (var s = 0; s < suffixes.length; s++) {
-        associatedWords.push(keyword + suffixes[s]);
-    }
+// ===== 联想词与核心业务逻辑 =====
 
-    // ===== 分步动画控制 =====
+    // 假设从 URL 参数或后端模板渲染拿到了用户原始的问题
+    // 例如：/ai-analysis/?query=帮我分析一下最近的服务器采购趋势
+    const urlParams = new URLSearchParams(window.location.search);
+    const originalQuery = urlParams.get('query') || '{{ keyword|escapejs }}';
+    const fileId = urlParams.get('file_id') || null;
+    document.getElementById('keywordDisplay').innerText = originalQuery;
+
     var progressBar = document.getElementById('progressBar');
     var progressText = document.getElementById('progressText');
 
@@ -510,132 +507,208 @@
     function activateStep(id) {
         document.getElementById(id).classList.add('active');
     }
+
     function completeStep(id) {
         var el = document.getElementById(id);
         el.classList.remove('active');
         el.classList.add('done');
     }
 
-    // Step 1: 检索数据 (0-30%)
-    setTimeout(function() {
-        activateStep('step1');
-        setProgress(5, '正在检索数据库...');
-    }, 300);
-
-    setTimeout(function() { setProgress(15, '正在匹配相关记录...'); }, 800);
-    setTimeout(function() { setProgress(28, '数据检索完成'); }, 1800);
-    setTimeout(function() {
-        completeStep('step1');
-        setProgress(30, '数据检索完成 ✓');
-    }, 2200);
-
-    // Step 2: 生成联想词 (30-70%)
-    setTimeout(function() {
-        activateStep('step2');
-        setProgress(35, 'AI 正在分析关键词...');
-
-        // 显示联想词区域
-        var section = document.getElementById('associationSection');
-        section.classList.add('visible');
-
-        // 自动展开思考过程
+    // 思考过程折叠切换
+    window.toggleThinking = function() {
         var toggle = document.getElementById('thinkingToggle');
         var content = document.getElementById('thinkingContent');
-        toggle.classList.add('open');
-        content.classList.add('open');
+        toggle.classList.toggle('open');
+        content.classList.toggle('open');
+    }
 
-        // 模拟思考过程文字逐步出现
-        var thinkingText = '["' + associatedWords.join('","') + '"]';
-        var charIndex = 0;
-        var typeInterval = setInterval(function() {
-            if (charIndex < thinkingText.length) {
-                content.textContent = thinkingText.substring(0, charIndex + 1);
-                charIndex++;
-            } else {
-                clearInterval(typeInterval);
+// ===== 核心异步执行流 =====
+    async function runAnalysisFlow() {
+        try {
+            // 0. 解析 URL 参数获取用户原始提问
+            const urlParams = new URLSearchParams(window.location.search);
+            const originalQuery = urlParams.get('query') || '帮我生成分析报告';
+
+            // 提取前端存储的 Token (确保发送给 FastAPI 时能通过身份认证)
+            const jwtToken = localStorage.getItem('access_token') || localStorage.getItem('token') || '';
+
+            document.getElementById('keywordDisplay').innerText = "AI 正在解构您的需求...";
+
+            // ==========================================
+            // Step 1: 准备与初始化
+            // ==========================================
+            activateStep('step1');
+            setProgress(10, '正在连接智能体编排网络...');
+            await new Promise(r => setTimeout(r, 800));
+            completeStep('step1');
+            setProgress(20, '网络连接成功 ✓');
+
+            // ==========================================
+            // Step 2: 调用 FastAPI (8001端口) 提取联想词
+            // ==========================================
+            activateStep('step2');
+            setProgress(30, '大语言模型正在深度理解需求并扩充维度...');
+
+            document.getElementById('associationSection').classList.add('visible');
+            document.getElementById('thinkingToggle').classList.add('open');
+            document.getElementById('thinkingContent').classList.add('open');
+
+            // 🎯 【修改点 1：精确指向 8001 端口】
+            const expandRes = await fetch('http://127.0.0.1:8001/api/chat/expand-keywords', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${jwtToken}`
+                },
+                body: JSON.stringify({ query: originalQuery })
+            });
+
+            if (!expandRes.ok) {
+                if (expandRes.status === 401) throw new Error('身份认证失败(401)：请检查 Token 是否有效');
+                if (expandRes.status === 403) throw new Error('拒绝访问(403)：请检查跨域CORS配置');
+                throw new Error(`关键词扩充请求失败 (HTTP ${expandRes.status})`);
             }
-        }, 30);
 
-    }, 2800);
+            const expandData = await expandRes.json();
+            const associatedWords = expandData.keywords || ["未能提取到有效关键词"];
 
-    // 联想词标签逐个出现
-    setTimeout(function() {
-        setProgress(45, '生成联想关键词中...');
-        var tagsContainer = document.getElementById('keywordTags');
-        var delay = 0;
-        for (var w = 0; w < associatedWords.length; w++) {
-            (function(word, d) {
-                setTimeout(function() {
-                    var tag = document.createElement('span');
-                    tag.className = 'keyword-tag';
-                    tag.innerHTML = '<span class="tag-check">✓</span> ' + word;
-                    tagsContainer.appendChild(tag);
-                    // 触发动画
-                    setTimeout(function() { tag.classList.add('show'); }, 30);
+            // 动态替换顶部标题
+            document.getElementById('keywordDisplay').innerText = associatedWords.join(' | ');
 
-                    // 更新进度
-                    var pct = 45 + Math.round((d / 300) / associatedWords.length * 25);
-                    setProgress(Math.min(pct, 68), '已生成 ' + (Math.floor(d/300) + 1) + '/' + associatedWords.length + ' 个联想词');
-                }, d);
-            })(associatedWords[w], delay);
-            delay += 300;
-        }
-    }, 3800);
+            // 思考过程动画
+            const thinkingContent = document.getElementById('thinkingContent');
+            const thinkingText = '["' + associatedWords.join('", "') + '"]';
+            for (let i = 0; i <= thinkingText.length; i++) {
+                thinkingContent.textContent = thinkingText.substring(0, i);
+                await new Promise(r => setTimeout(r, 20));
+            }
 
-// Step 2 结束后的时间点
-    var step2DoneTime = 3800 + associatedWords.length * 300 + 500;
+            setProgress(45, '正在渲染多维分析视角...');
+            const tagsContainer = document.getElementById('keywordTags');
 
-    setTimeout(function() {
-        completeStep('step2');
-        setProgress(70, '联想词生成完成 ✓');
+            for (let w = 0; w < associatedWords.length; w++) {
+                const tag = document.createElement('span');
+                tag.className = 'keyword-tag';
+                tag.innerHTML = '<span class="tag-check">✓</span> ' + associatedWords[w];
+                tagsContainer.appendChild(tag);
 
-        // 开始 Step 3: 真正调用后端智能体
-        activateStep('step3');
-        setProgress(75, 'AI 智能体正在进行数据检索与深度分析 (请耐心等待)...');
+                await new Promise(r => setTimeout(r, 50));
+                tag.classList.add('show');
 
-        // 发起真实请求到 Django 桥梁视图
-        fetch('/reports/api/run-agent/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                // 如果启用了 CSRF，需要在此处加上 X-CSRFToken 头
-            },
-            body: JSON.stringify({
-                keyword: keyword,
-                associated_words: associatedWords
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                setProgress(100, '分析完成，正在为您打开报告...');
+                let pct = 45 + Math.round(((w + 1) / associatedWords.length) * 15);
+                setProgress(pct, `已锁定 ${w + 1}/${associatedWords.length} 个分析维度`);
+                await new Promise(r => setTimeout(r, 250));
+            }
+
+            completeStep('step2');
+            setProgress(60, '需求拆解与维度扩充完成 ✓');
+
+            // ==========================================
+            // Step 3: 调用 FastAPI (8001端口) 流式多智能体系统
+            // ==========================================
+            activateStep('step3');
+            setProgress(70, '多智能体正在检索知识库并生成深度报告...');
+
+            const requestBody = {
+                messages: [{ role: "user", content: originalQuery }],
+                selected_keywords: associatedWords,
+                use_knowledge_base: true,
+                use_tools: true,
+                execution_mode: "sequential"
+            };
+
+            // 🎯 【修改点 2：精确指向 8001 端口的 stream 接口】
+            const agentRes = await fetch('http://127.0.0.1:8001/chat/multi-agent/stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${jwtToken}`
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            if (!agentRes.ok) {
+                if (agentRes.status === 401) throw new Error('身份认证失败 (401)：请检查 Token');
+                if (agentRes.status === 403) throw new Error('拒绝访问 (403)：请检查跨域CORS配置');
+                throw new Error(`网络请求异常 (HTTP ${agentRes.status})`);
+            }
+
+            // 解析 SSE 数据流
+            const reader = agentRes.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let done = false;
+            let threadId = null;
+            let buffer = '';
+
+            while (!done) {
+                const { value, done: readerDone } = await reader.read();
+                if (readerDone) { done = true; break; }
+
+                buffer += decoder.decode(value, { stream: true });
+                let parts = buffer.split('\n\n');
+                buffer = parts.pop();
+
+                for (const part of parts) {
+                    const lines = part.split('\n');
+                    let currentEvent = '';
+                    let dataStr = '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('event: ')) {
+                            currentEvent = line.replace('event: ', '').trim();
+                        } else if (line.startsWith('data: ')) {
+                            dataStr = line.replace('data: ', '').trim();
+                        }
+                    }
+
+                    if (dataStr) {
+                        let parsedData = null;
+                        try {
+                            parsedData = JSON.parse(dataStr);
+                        } catch (e) {
+                            continue;
+                        }
+
+                        if (parsedData) {
+                            // 捕获后端的 Python 真实报错
+                            if (currentEvent === 'error') {
+                                throw new Error(`后端报错：${parsedData.message}`);
+                            }
+
+                            // 捕获当前正在执行的 Agent
+                            if (currentEvent === 'agent_execution') {
+                                setProgress(80, `智能体 [${parsedData.agent}] 正在执行深度分析...`);
+                            }
+
+                            // 捕获最终的 thread_id
+                            if (currentEvent === 'completed') {
+                                threadId = parsedData.thread_id;
+                                setProgress(100, '多智能体分析完毕！报告已生成，正在跳转...');
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (threadId) {
                 completeStep('step3');
-
-                // 延迟一下跳转到 Wagtail 编辑页（对应你的第三张图）
-                setTimeout(function() {
-                    window.location.href = data.edit_url;
+                setTimeout(() => {
+                    window.location.href = `/chat/?new_report_id=${threadId}`;
                 }, 1000);
             } else {
-                setProgress(100, '分析失败：' + data.error);
-                document.getElementById('step3').classList.remove('active');
+                throw new Error('流式执行结束，但未获取到有效的 thread_id');
             }
-        })
-        .catch(error => {
-            setProgress(100, '网络请求异常，请重试。');
+
+        } catch (error) {
+            console.error('流程中断:', error);
+            setProgress(100, '任务异常终止：' + error.message);
+            document.getElementById('step1').classList.remove('active');
+            document.getElementById('step2').classList.remove('active');
             document.getElementById('step3').classList.remove('active');
-            console.error('Error:', error);
-        });
-
-    }, step2DoneTime);
-
-})();
-
-// 思考过程折叠切换
-function toggleThinking() {
-    var toggle = document.getElementById('thinkingToggle');
-    var content = document.getElementById('thinkingContent');
-    toggle.classList.toggle('open');
-    content.classList.toggle('open');
-}
+            document.getElementById('step3').classList.add('error');
+        }
+    }
+    runAnalysisFlow();
+    })();
 </script>
 {% endblock %}

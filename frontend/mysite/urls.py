@@ -16,6 +16,9 @@ urlpatterns = [
     path("documents/", include(wagtaildocs_urls)),
     path("search/", search_views.search, name="search"),
     path("reports/ai-analysis/", report_views.ai_analysis, name="ai_analysis"),
+    path("chat/", report_views.chat_home, name="chat_home"), # 全新的纯聊天入口页
+    path("api/expand-keywords/", report_views.expand_keywords, name="expand_keywords"), # 提取关键词 API
+    path("api/run-agent/", report_views.run_agent, name="run_agent"), # 执行多智能体生成报告 API
     path("api/report/update/<int:report_id>/", report_views.update_report_content, name="update_report_content"),
     path("api/report/filter/<int:report_id>/", report_views.filter_historical_projects, name="filter_historical_projects"),
     path("api/report/filter/ongoing/<int:report_id>/", report_views.filter_ongoing_projects, name="filter_ongoing_projects"),
@@ -27,7 +30,7 @@ urlpatterns = [
     path("accounts/", include("allauth.urls")),
     path('api/run-agent/', run_ai_agent_and_create_report, name='run_agent'),
     path('api/get-token/', get_fastapi_token, name='get_fastapi_token'),
-
+    path("api/upload-temp/", report_views.upload_temp_file, name="upload_temp_file"),
 ]
 
 

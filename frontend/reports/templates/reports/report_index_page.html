@@ -1,112 +1,364 @@
 {% extends "base.html" %}
 {% load static wagtailcore_tags %}
 
-{% block body_class %}report-index-page{% endblock %}
+{% block body_class %}report-detail-page{% endblock %}
 
 {% block content %}
 <div class="page-header">
     <div class="container">
-        <h1>产品分析/需求调查</h1>
-        {% if page.intro %}
-        <div class="intro">{{ page.intro|richtext }}</div>
-        {% endif %}
+        <div class="breadcrumb">
+            <a href="/">首页</a> / <a href="/reports/">需求调查报告</a> / <span>{{ page.title }}</span>
+        </div>
+        <div class="report-header-actions" style="margin-top: 15px;">
+            <h1 style="font-size: 24px; margin: 0 0 15px 0; color: #fff; line-height: 1.4;">关于“{{ page.procurement_name }}”的分析报告</h1>
+            <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+                <div style="margin-bottom: 0; color: rgba(255,255,255,0.8); font-size: 14px;">
+                    <span class="badge" style="background:#fff; color:#2196f3; padding:2px 8px; border-radius:4px; margin-right:10px; font-weight: bold;">{{ page.analysis_type }}</span>
+                    <span>编号：{{ page.serial_number|default:"--" }}</span>
+                </div>
+                <div class="header-btns">
+                    {% if request.user.is_authenticated and request.user.is_staff %}
+                    <a href="/admin/pages/{{ page.id }}/edit/" class="btn btn-primary" style="background: #fff; color: #2196f3; border: none; padding: 5px 15px; border-radius: 4px; text-decoration: none; font-weight: bold;">项目数据调整</a>
+                    <a href="/admin/pages/{{ page.id }}/edit/" class="btn btn-outline" style="border: 1px solid rgba(255,255,255,0.6); color: #fff; padding: 5px 15px; border-radius: 4px; text-decoration: none; margin-left: 10px;">添加更多项目</a>
+                    {% endif %}
+                    {% if page.pdf_file %}
+                    <a href="{{ page.pdf_file.url }}" class="btn btn-primary" style="background: #fff; color: #2196f3; border: none; padding: 5px 15px; border-radius: 4px; text-decoration: none; margin-left: 10px; font-weight: bold;" download>下载/打印报告</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
-<div class="report-section">
-    <div class="container">
-        {% if user.is_authenticated %}
-        <!-- 搜索框 -->
-        <div class="search-bar">
-            <form method="get" action="{% url 'ai_analysis' %}" id="searchForm">
-                <input type="text" name="search" id="searchInput" placeholder="请输入关键字搜索..." value="{{ request.GET.search }}" required>
-                <button type="submit">一键分析</button>
-            </form>
+<div class="report-container" style="background: #f5f5f5; padding: 20px 0;">
+    <div class="container" style="display: flex; gap: 20px;">
+        <div class="report-sidebar" style="width: 240px; background: white; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 10px 0; height: fit-content;">
+            <ul class="nav-tabs" style="list-style: none; padding: 0; margin: 0;">
+                <li class="nav-item active" onclick="switchTab(this, 'supply')">市场供给分析</li>
+                <li class="nav-item" onclick="switchTab(this, 'historical')">历史成交项目({{ page.historical_projects.count }})</li>
+                <li class="nav-item" onclick="switchTab(this, 'ongoing')">进行中项目({{ page.ongoing_projects.count }})</li>
+                <li class="nav-item" onclick="switchTab(this, 'trends')">市场交易趋势</li>
+                <li class="nav-item" onclick="switchTab(this, 'intentions')">采购意向({{ page.purchase_intentions.count }})</li>
+                <li class="nav-item" onclick="switchTab(this, 'announcements')">采购公告(3066)</li>
+                <li class="nav-item" onclick="switchTab(this, 'contracts')">采购合同(224)</li>
+                <li class="nav-item" onclick="switchTab(this, 'bidding')">招标文件(1195)</li>
+                <li class="nav-item" onclick="switchTab(this, 'ai')">AI多智能体交互</li>
+            </ul>
         </div>
 
-        <!-- 快捷关键词标签 -->
-        <div class="category-tabs">
-            <a href="javascript:void(0)" class="tab" onclick="fillSearch(this)">调查分析</a>
-            <a href="javascript:void(0)" class="tab" onclick="fillSearch(this)">人工智能</a>
-            <a href="javascript:void(0)" class="tab" onclick="fillSearch(this)">大数据</a>
-            <a href="javascript:void(0)" class="tab" onclick="fillSearch(this)">中成氏范围</a>
-            <a href="javascript:void(0)" class="tab" onclick="fillSearch(this)">舆论研究</a>
-            <a href="javascript:void(0)" class="tab" onclick="fillSearch(this)">物联</a>
-            <a href="javascript:void(0)" class="tab" onclick="fillSearch(this)">生活</a>
-        </div>
+        <div class="report-content-area" style="flex: 1; background: white; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 20px; min-height: 600px;">
 
-        <script>
-        function fillSearch(el) {
-            var input = document.getElementById('searchInput');
-            input.value = el.textContent.trim();
-            // 移除所有标签的 active 状态，给当前点击的标签加上
-            var tabs = document.querySelectorAll('.category-tabs .tab');
-            tabs.forEach(function(tab) { tab.classList.remove('active'); });
-            el.classList.add('active');
+            <div id="tab-supply" class="tab-content active">
+                <h3>市场供给分析</h3>
+                <div class="analysis-content" style="margin-top: 20px; line-height: 1.8; color: #333; min-height: 200px;">
+                    {{ page.market_supply_analysis|linebreaksbr|default:"暂无分析内容 (请在后台添加)" }}
+                </div>
+            </div>
+
+            <div id="tab-historical" class="tab-content" style="display: none;">
+                <div class="view-list">
+                    {% include "reports/partials/project_filter.html" with type="historical" %}
+                    <div id="historical-table-wrapper">{% include "reports/partials/project_table.html" with projects=page.historical_projects.all %}</div>
+                </div>
+            </div>
+
+            <div id="tab-ongoing" class="tab-content" style="display: none;">
+                 </div>
+            <div id="tab-trends" class="tab-content" style="display: none;">
+                 </div>
+            <div id="tab-intentions" class="tab-content" style="display: none;">
+                 </div>
+            <div id="tab-announcements" class="tab-content" style="display: none;">
+                 </div>
+            <div id="tab-contracts" class="tab-content" style="display: none;">
+                 </div>
+            <div id="tab-bidding" class="tab-content" style="display: none;">
+                 </div>
+
+            <div id="tab-ai" class="tab-content" style="display: none; height: 100%;">
+                <h3 style="margin-top: 0; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;">多智能体深度对话</h3>
+
+                <div class="chat-wrapper">
+                    <div id="chat-box" class="chat-box">
+                        <div class="message ai-message">
+                            <div class="avatar">🤖</div>
+                            <div class="content">
+                                你好！我是本项目专用的智能体助手。我已经读取了关于 **“{{ page.procurement_name }}”** 的后台数据。你可以让我对比历史成交记录、分析市场趋势，或者调用后台 RAG 检索更多信息。
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="input-container">
+                        <div class="input-wrapper">
+                            <textarea id="user-input" rows="1" placeholder="例如：帮我总结这个项目潜在的供应商有哪些？" oninput="autoResize(this)"></textarea>
+                            <button id="send-btn" onclick="sendMessage()">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                            </button>
+                        </div>
+                        <div class="disclaimer">回答由 Multi-Agent 系统生成，内容涵盖检索、分析与验证，请注意复核。</div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<style>
+    /* 原有样式保留 */
+    .nav-item { padding: 15px 20px; cursor: pointer; color: #333; border-bottom: 1px solid #f0f0f0; transition: all 0.3s; }
+    .nav-item:hover { background: #f9f9f9; color: #2196f3; }
+    .nav-item.active { background: #fff; color: #2196f3; border-left: 3px solid #2196f3; font-weight: bold; }
+    .criteria-options .c-opt { margin-right: 15px; cursor: pointer; padding: 2px 8px; border-radius: 2px; display: inline-block; }
+    .criteria-options .c-opt.active { color: #fff; background: #2196f3; }
+
+    /* 新增：Chat 交互区样式 */
+    .chat-wrapper {
+        display: flex;
+        flex-direction: column;
+        height: 550px; /* 控制在详情页内的合理高度 */
+        background: #fafafa;
+        border: 1px solid #eaeaea;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .chat-box {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    .message { display: flex; gap: 12px; max-width: 85%; }
+    .message.user-message { align-self: flex-end; flex-direction: row-reverse; }
+
+    .message .avatar {
+        width: 32px; height: 32px; border-radius: 50%;
+        background-color: #fff; border: 1px solid #ddd;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 16px; flex-shrink: 0;
+    }
+    .message.user-message .avatar { background-color: #2196f3; color: white; border: none; }
+
+    .message .content {
+        background-color: #fff; padding: 12px 16px;
+        border-radius: 12px; border: 1px solid #eaeaea;
+        line-height: 1.6; color: #333; font-size: 14px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+    }
+    .message.user-message .content {
+        background-color: #e3f2fd; border-color: #bbdefb; color: #0d47a1;
+    }
+
+    .input-container { padding: 15px 20px; background: white; border-top: 1px solid #eaeaea; }
+    .input-wrapper {
+        position: relative; display: flex; align-items: flex-end;
+        background-color: #f1f3f4; border-radius: 20px; padding: 6px 14px;
+    }
+
+    textarea {
+        flex: 1; border: none; background: transparent; resize: none;
+        outline: none; padding: 8px 0; font-size: 14px; line-height: 1.5;
+        max-height: 120px; overflow-y: hidden; font-family: inherit;
+    }
+
+    #send-btn {
+        background: transparent; border: none; cursor: pointer; padding: 8px;
+        color: #2196f3; display: flex; align-items: center; justify-content: center;
+    }
+    #send-btn svg { width: 18px; height: 18px; }
+    #send-btn:hover { background-color: rgba(33, 150, 243, 0.1); border-radius: 50%; }
+    #send-btn:disabled { color: #ccc; cursor: not-allowed; }
+
+    .disclaimer { text-align: center; font-size: 11px; color: #999; margin-top: 8px; }
+    .typing-indicator::after { content: '...'; animation: typing 1.5s infinite steps(4); }
+    @keyframes typing { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } 100% { content: ''; } }
+</style>
+
+<script>
+    // 原有的 switchTab 等逻辑保持不变
+    function switchTab(element, tabId) {
+        document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+        document.getElementById('tab-' + tabId).style.display = 'block';
+        document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+        element.classList.add('active');
+
+        // 如果切到了 AI 面板，滚动条自动到底
+        if(tabId === 'ai') {
+            const chatBox = document.getElementById('chat-box');
+            chatBox.scrollTop = chatBox.scrollHeight;
         }
-        </script>
-        {% else %}
-        <!-- 未登录提示 -->
-        <div class="login-prompt-card">
-            <h3>需要登录才能使用完整功能</h3>
-            <p>登录后您可以使用搜索、分类筛选功能，查看调查报告详情</p>
-            <a href="{% url 'account_login' %}?next={{ request.path }}" class="login-btn">立即登录</a>
-        </div>
-        {% endif %}
+    }
 
-        <!-- 报告表格 -->
-        <div class="report-table-wrapper">
-            <table class="report-table">
-                <thead>
-                    <tr>
-                        <th width="60">序号</th>
-                        <th>拟采购名称</th>
-                        <th width="150">分析编报</th>
-                        <th width="180">分析时间</th>
-                        <th width="150">操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for report in reports %}
-                    <tr>
-                        <td>{{ forloop.counter }}</td>
-                        <td class="procurement-name">{{ report.procurement_name }}</td>
-                        <td>{{ report.analysis_type }}</td>
-                        <td>{{ report.analysis_time|date:"Y/m/d H:i" }}</td>
-                        <td class="actions">
-                            <a href="{% pageurl report %}" class="btn btn-view">查看</a>
-                            {% if user.is_staff %}
-                            <a href="/admin/pages/{{ report.id }}/edit/" class="btn btn-edit">编辑</a>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="5" class="no-data">暂无报告数据</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+    // ========== 新增：多智能体 Chat 交互逻辑 ==========
+    const chatBox = document.getElementById('chat-box');
+    const userInput = document.getElementById('user-input');
+    const sendBtn = document.getElementById('send-btn');
 
-        <!-- 分页 -->
-        {% if reports.has_other_pages %}
-        <div class="pagination">
-            {% if reports.has_previous %}
-            <a href="?page={{ reports.previous_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}"
-                class="page-link">上一页</a>
-            {% endif %}
+    function autoResize(textarea) {
+        textarea.style.height = 'auto';
+        textarea.style.height = textarea.scrollHeight + 'px';
+    }
 
-            <span class="page-info">
-                显示第 {{ reports.start_index }} 到 {{ reports.end_index }} 条，共 {{ total_count }} 条
-            </span>
+    userInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
 
-            {% if reports.has_next %}
-            <a href="?page={{ reports.next_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}"
-                class="page-link">下一页</a>
-            {% endif %}
-        </div>
-        {% endif %}
-    </div>
-</div>
+    async function sendMessage() {
+        const text = userInput.value.trim();
+        if (!text) return;
+
+        appendMessage(text, 'user-message', '👤');
+        userInput.value = '';
+        userInput.style.height = 'auto';
+
+        const loadingId = 'loading-' + Date.now();
+        appendMessage('<span class="typing-indicator">智能体编排中 (检索与分析)</span>', 'ai-message', '🤖', loadingId);
+        sendBtn.disabled = true;
+
+        try {
+            // 请将这里替换为你后端的 FastAPI 接口地址
+            const response = await fetch('/api/agent-chat/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    query: text,
+                    // 【关键点】：把当前页面的 ID 传给后端，Agent 就知道该查哪个项目的上下文了！
+                    project_id: "{{ page.id }}",
+                    project_name: "{{ page.procurement_name }}"
+                })
+            });
+
+            const data = await response.json();
+            document.getElementById(loadingId).remove();
+            appendMessage(data.answer, 'ai-message', '🤖');
+
+        } catch (error) {
+            console.error('Error:', error);
+            document.getElementById(loadingId).remove();
+            appendMessage('抱歉，多智能体协作时发生了错误，请检查 FastAPI 后端状态。', 'ai-message', '⚠️');
+        } finally {
+            sendBtn.disabled = false;
+        }
+    }
+
+    function appendMessage(content, className, avatarChar, id = null) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${className}`;
+        if (id) messageDiv.id = id;
+        messageDiv.innerHTML = `<div class="avatar">${avatarChar}</div><div class="content">${content}</div>`;
+        chatBox.appendChild(messageDiv);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        document.body.addEventListener('click', function (e) {
+            if (e.target.classList.contains('c-opt')) {
+                const container = e.target.closest('.criteria-options');
+                if (container) {
+                    container.querySelectorAll('.c-opt').forEach(el => el.classList.remove('active'));
+                    e.target.classList.add('active');
+
+                    if (container.closest('#tab-historical')) {
+                        fetchHistoricalProjects();
+                    } else if (container.closest('#tab-ongoing')) {
+                        fetchOngoingProjects();
+                    } else if (container.closest('#tab-intentions')) {
+                        fetchPurchaseIntentions();
+                    }
+                }
+            }
+        });
+
+        document.body.addEventListener('click', function (e) {
+            if (e.target.classList.contains('project-search-btn')) {
+                const container = e.target.closest('.tab-content');
+                if (container) {
+                    if (container.id === 'tab-historical') fetchHistoricalProjects();
+                    else if (container.id === 'tab-ongoing') fetchOngoingProjects();
+                    else if (container.id === 'tab-intentions') fetchPurchaseIntentions();
+                }
+            }
+        });
+
+        document.body.addEventListener('keyup', function (e) {
+            if (e.target.classList.contains('project-search-input') && e.key === 'Enter') {
+                const container = e.target.closest('.tab-content');
+                if (container) {
+                    if (container.id === 'tab-historical') fetchHistoricalProjects();
+                    else if (container.id === 'tab-ongoing') fetchOngoingProjects();
+                    else if (container.id === 'tab-intentions') fetchPurchaseIntentions();
+                }
+            }
+        });
+    });
+
+    function fetchHistoricalProjects() {
+        const reportIdInput = document.querySelector('.report-id-input');
+        if (!reportIdInput) return;
+        const reportId = reportIdInput.value;
+        const tabContainer = document.getElementById('tab-historical');
+        const searchInput = tabContainer.querySelector('.project-search-input') || document.querySelector('.project-search-input');
+        const searchQuery = searchInput ? searchInput.value : '';
+        const timeFilterEl = tabContainer.querySelector('.filter-time .c-opt.active');
+        const amountFilterEl = tabContainer.querySelector('.filter-amount .c-opt.active');
+        const timeFilter = timeFilterEl ? timeFilterEl.getAttribute('data-value') : 'all';
+        const amountFilter = amountFilterEl ? amountFilterEl.getAttribute('data-value') : 'all';
+        const url = `/api/report/filter/${reportId}/?q=${encodeURIComponent(searchQuery)}&time=${timeFilter}&amount=${amountFilter}`;
+        fetch(url).then(res => res.text()).then(html => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const newTable = doc.querySelector('.project-table-container');
+            if (newTable) document.getElementById('historical-table-wrapper').innerHTML = newTable.outerHTML;
+        });
+    }
+
+    function fetchOngoingProjects() {
+        const reportIdInput = document.querySelector('.report-id-input');
+        if (!reportIdInput) return;
+        const reportId = reportIdInput.value;
+        const tabContainer = document.getElementById('tab-ongoing');
+        const searchInput = tabContainer.querySelector('.project-search-input');
+        const searchQuery = searchInput ? searchInput.value : '';
+        const timeFilterEl = tabContainer.querySelector('.filter-time .c-opt.active');
+        const amountFilterEl = tabContainer.querySelector('.filter-amount .c-opt.active');
+        const timeFilter = timeFilterEl ? timeFilterEl.getAttribute('data-value') : 'all';
+        const amountFilter = amountFilterEl ? amountFilterEl.getAttribute('data-value') : 'all';
+        const url = `/api/report/filter/ongoing/${reportId}/?q=${encodeURIComponent(searchQuery)}&time=${timeFilter}&amount=${amountFilter}`;
+        fetch(url).then(res => res.text()).then(html => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const newTable = doc.querySelector('.ongoing-project-table-container');
+            if (newTable) document.getElementById('ongoing-table-wrapper').innerHTML = newTable.outerHTML;
+        });
+    }
+
+    function fetchPurchaseIntentions() {
+        const reportIdInput = document.querySelector('.report-id-input');
+        if (!reportIdInput) return;
+        const reportId = reportIdInput.value;
+        const tabContainer = document.getElementById('tab-intentions');
+        const searchInput = tabContainer.querySelector('.project-search-input');
+        const searchQuery = searchInput ? searchInput.value : '';
+        const amountFilterEl = tabContainer.querySelector('.filter-amount .c-opt.active');
+        const timeFilterEl = tabContainer.querySelector('.filter-time .c-opt.active');
+        const regionFilterEl = tabContainer.querySelector('.filter-region .c-opt.active');
+        const amountFilter = amountFilterEl ? amountFilterEl.getAttribute('data-value') : 'all';
+        const timeFilter = timeFilterEl ? timeFilterEl.getAttribute('data-value') : 'all';
+        const regionFilter = regionFilterEl ? regionFilterEl.getAttribute('data-value') : 'All';
+        const url = `/api/report/filter/intentions/${reportId}/?q=${encodeURIComponent(searchQuery)}&time=${timeFilter}&amount=${amountFilter}&region=${encodeURIComponent(regionFilter)}`;
+        fetch(url).then(res => res.text()).then(html => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const newList = doc.querySelector('.intention-list');
+            if (newList) document.getElementById('intentions-list-wrapper').innerHTML = newList.outerHTML;
+        });
+    }
+</script>
 {% endblock %}

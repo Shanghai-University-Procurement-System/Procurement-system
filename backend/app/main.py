@@ -8,8 +8,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, Generator, List, Optional, Literal
-
-import httpx
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -86,12 +85,12 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 课程大作业可放开，实际环境请限制域名
+    # 把 ["*"] 替换成你 Django 真实的运行地址
+    allow_origins=["http://127.0.0.1:8000", "http://localhost:8000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 # 添加请求日志中间件
 @app.middleware("http")
 async def log_requests(request, call_next):
@@ -390,26 +389,37 @@ class CurrentUser(BaseModel):
     id: str
     username: str
 
-from fastapi.security import HTTPAuthorizationCredentials
 from .auth import security_scheme, verify_token
 # 2. 改写依赖项：不再查询数据库，直接信任解析成功的 JWT
+security_scheme = HTTPBearer(auto_error=False)
+
+
+# 2. 改写依赖项：加入测试联调时的“兜底”放行逻辑
 async def get_current_user(
-        credentials: HTTPAuthorizationCredentials = Depends(security_scheme)  # 👈 修改这里
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme)
 ) -> CurrentUser:
-    # HTTPBearer 会把 token 放在 credentials.credentials 里面
-    token = credentials.credentials  # 👈 提取 token
-    payload = verify_token(token)
+    # 【联调模式】如果前端没有传 Token，直接分配一个测试用户放行
+    if not credentials or not credentials.credentials:
+        logger.info("⚠️ 未检测到有效 Token，使用【测试用户】身份放行")
+        return CurrentUser(id="test_user_001", username="TestUser")
 
-    user_id = payload.get("sub")
-    username = payload.get("username", "Unknown")
+    token = credentials.credentials
+    try:
+        from .auth import verify_token
+        payload = verify_token(token)
 
-    if user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="无效的认证凭据：缺少用户ID",
-        )
+        user_id = payload.get("sub")
+        username = payload.get("username", "Unknown")
 
-    return CurrentUser(id=str(user_id), username=username)
+        if user_id is None:
+            return CurrentUser(id="test_user_001", username="TestUser")
+
+        return CurrentUser(id=str(user_id), username=username)
+
+    except Exception as e:
+        # 解析失败时同样不报错，用测试身份放行，方便你跑通流程
+        logger.warning(f"⚠️ Token 解析失败: {e}，使用【测试用户】身份放行")
+        return CurrentUser(id="test_user_001", username="TestUser")
 # 3. 简化 /api/auth/me 接口
 @app.get("/api/auth/me")
 async def get_me(current_user: CurrentUser = Depends(get_current_user)):

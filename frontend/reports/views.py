@@ -7,7 +7,7 @@ from django.utils import timezone
 from datetime import timedelta
 import json
 from .models import ReportPage, HistoricalProject, OngoingProject
-
+from django.conf import settings
 import httpx
 import json
 from django.http import JsonResponse
@@ -397,3 +397,86 @@ def filter_documents(request, report_id):
     }
     return render(request, 'reports/partials/document_table.html', context)
 
+
+def chat_home(request):
+    """
+    渲染全新的纯对话入口页面 (chat_home.html)
+    """
+    return render(request, 'reports/chat_home.html')
+
+
+@csrf_exempt
+@require_POST
+def expand_keywords(request):
+    """
+    Step 2: 接收用户原始提问，调用大模型提取并扩充关键词
+    被 ai_analysis.html 页面调用
+    """
+    try:
+        data = json.loads(request.body)
+        original_query = data.get('query', '')
+
+        # TODO: 在这里调用你的真实大语言模型 (LLM) 进行 NER 或关键词提取
+        # 例如：llm_result = llm.invoke(f"提取这些关键词: {original_query}")
+
+        # 这里为了让你立刻看到前端效果，暂时返回写死的模拟数据：
+        mock_keywords = ["市场趋势", "历史成交金额", "潜在供应商名录", "合规性与风险"]
+
+        return JsonResponse({'success': True, 'keywords': mock_keywords})
+
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_POST
+def run_agent(request):
+    """
+    Step 3: 接收组合后的提示词，驱动多智能体(RAG)系统生成最终的 Wagtail 报告
+    被 ai_analysis.html 页面调用
+    """
+    try:
+        data = json.loads(request.body)
+        original_query = data.get('original_query', '')
+        expanded_keywords = data.get('expanded_keywords', [])
+        enriched_query = data.get('enriched_query', '')
+
+        # TODO: 1. 将 enriched_query 喂给你的多智能体系统 (LangGraph)
+        # TODO: 2. 智能体跑完后，用 Wagtail 的 API 在数据库里新建一条 ReportPage 数据
+        # report = ReportPage(title=..., procurement_name=...)
+        # parent_page.add_child(instance=report)
+        # report.save_revision().publish()
+
+        # 为了演示跳转，这里假设你的多智能体成功跑完，并在数据库里生成了一篇 ID 为 1 的报告
+        # (你需要替换为你系统里真实存在的报告 ID)
+        new_report_id = 1
+
+        return JsonResponse({'success': True, 'report_id': new_report_id})
+
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+# reports/views.py 补充代码
+from django.core.files.storage import FileSystemStorage
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
+import os
+
+
+@csrf_exempt
+@require_POST
+def upload_temp_file(request):
+    """
+    处理 Chat 界面上传的 RAG 参考文件
+    """
+    if request.FILES.get('file'):
+        uploaded_file = request.FILES['file']
+        # 将文件暂存到 media/temp_rag_docs/ 目录下
+        fs = FileSystemStorage(location=os.path.join(settings.MEDIA_ROOT, 'temp_rag_docs'))
+        filename = fs.save(uploaded_file.name, uploaded_file)
+
+        # 返回文件名作为 file_id
+        return JsonResponse({'success': True, 'file_id': filename})
+    return JsonResponse({'success': False, 'error': '未接收到文件'})
