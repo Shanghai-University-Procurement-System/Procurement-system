@@ -385,14 +385,13 @@ class ReportPage(Page):
     procurement_name = models.TextField(verbose_name='拟采购名称')
     
     ANALYSIS_CHOICES = [
-        ('一键分析', '一键分析'),
-        ('高级分析', '高级分析'),
+        ('分析', '分析'),
     ]
     analysis_type = models.CharField(
         max_length=50,
         choices=ANALYSIS_CHOICES,
-        default='一键分析',
-        verbose_name='选择制度'
+        default='分析',
+        verbose_name='分析'
     )
     analysis_time = models.DateTimeField(auto_now_add=True, verbose_name='分析时间')
     category = models.CharField(
@@ -439,15 +438,8 @@ class ReportPage(Page):
         FieldPanel('is_public'),
         FieldPanel('serial_number'),
         FieldPanel('procurement_name'),
-        FieldPanel('analysis_type'),
         FieldPanel('pdf_file'),
-        FieldPanel('content'),
         InlinePanel('report_announcements', label="采购公告"),
-        InlinePanel('report_contracts', label="采购合同"),
-        InlinePanel('report_documents', label="招标文件"),
-        InlinePanel('purchase_intentions', label="采购意向"),
-        InlinePanel('historical_projects', label="历史成交项目"),
-        InlinePanel('ongoing_projects', label="进行中项目"),
         InlinePanel('top_buyers', label="各单位采购情况分析 (前5名)"),
         InlinePanel('region_purchase_data', label="各地区采购数据 (图表)"),
         InlinePanel('top_suppliers', label="供应商市场份额占比 (前5名)"),

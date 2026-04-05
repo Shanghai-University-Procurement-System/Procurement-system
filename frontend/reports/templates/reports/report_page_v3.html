@@ -262,7 +262,7 @@
             <div style="display: flex; justify-content: space-between; align-items: flex-end;">
                 <div style="margin-bottom: 0; color: rgba(255,255,255,0.8); font-size: 14px;">
                     <span class="badge"
-                        style="background:#fff; color:#2196f3; padding:2px 8px; border-radius:4px; margin-right:10px; font-weight: bold;">{{ page.analysis_type }}</span>
+                        style="background:#fff; color:#2196f3; padding:2px 8px; border-radius:4px; margin-right:10px; font-weight: bold;">分析</span>
                     <span>编号：{{ page.serial_number|default:"--" }}</span>
                 </div>
                 <div class="header-btns">
@@ -291,29 +291,9 @@
                 <li class="nav-item active" onclick="switchTab(this, 'supply')">
                     <span>市场供给分析</span>
                 </li>
-                <li class="nav-item" onclick="switchTab(this, 'historical')">
-                    <span>历史成交项目</span>
-                    <span class="nav-count">{{ page.historical_projects.count }}</span>
-                </li>
-                <li class="nav-item" onclick="switchTab(this, 'ongoing')">
-                    <span>进行中项目</span>
-                    <span class="nav-count">{{ page.ongoing_projects.count }}</span>
-                </li>
-                <li class="nav-item" onclick="switchTab(this, 'intentions')">
-                    <span>采购意向</span>
-                    <span class="nav-count">{{ page.purchase_intentions.count }}</span>
-                </li>
                 <li class="nav-item" onclick="switchTab(this, 'announcements')">
                     <span>采购公告</span>
                     <span class="nav-count">{{ page.report_announcements.count }}</span>
-                </li>
-                <li class="nav-item" onclick="switchTab(this, 'contracts')">
-                    <span>采购合同</span>
-                    <span class="nav-count">{{ page.report_contracts.count }}</span>
-                </li>
-                <li class="nav-item" onclick="switchTab(this, 'bidding')">
-                    <span>招标文件</span>
-                    <span class="nav-count">{{ page.report_documents.count }}</span>
                 </li>
                 <li class="nav-item" onclick="switchTab(this, 'ai')">
                     <span>AI总结分析</span>
@@ -324,21 +304,6 @@
         <!-- Content Area -->
         <div class="report-content-area"
             style="flex: 1; background: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); padding: 25px; min-height: 800px;">
-
-            <!-- Common Project Detail Sub-Interface Template (Reused by JS) -->
-            <template id="project-detail-template">
-                <div class="detail-sub-interface">
-                    <div style="margin-bottom: 20px;">
-                        <button onclick="hideProjectDetail(this)" class="btn btn-outline"
-                            style="border: 1px solid #ddd; padding: 5px 15px; border-radius: 20px; cursor: pointer; background: white; transition: all 0.3s;">&lt;
-                            返回列表</button>
-                    </div>
-                    <div style="background: #f9f9f9; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-                        <h3 style="margin-top: 0;">项目详情信息 (Mock)</h3>
-                        <p>这里显示项目的详细信息...</p>
-                    </div>
-                </div>
-            </template>
 
             <!-- Tab: Market Supply -->
             <div id="tab-supply" class="tab-content active">
@@ -491,72 +456,12 @@
 
             </div>
 
-            <!-- Tab: Historical Projects -->
-            <div id="tab-historical" class="tab-content" style="display: none;">
-                <div class="view-list">
-                    {% include "reports/partials/project_filter.html" with type="historical" %}
-                    <div class="report-text-summary"
-                        style="margin: 20px 0; text-indent: 2em; line-height: 1.8; color: #444; background: #fafafa; padding: 15px; border-radius: 4px;">
-                        {{ page.content|richtext }}
-                    </div>
-                    <div id="historical-table-wrapper">
-                        {% include "reports/partials/project_table.html" with projects=page.historical_projects.all %}
-                    </div>
-                </div>
-                <div class="view-detail" style="display: none;"></div>
-            </div>
-
-            <!-- Tab: Ongoing Projects -->
-            <div id="tab-ongoing" class="tab-content" style="display: none;">
-                <div class="view-list">
-                    {% include "reports/partials/project_filter.html" with type="ongoing" %}
-                    <div id="ongoing-table-wrapper">
-                        {% include "reports/partials/ongoing_project_table.html" with projects=page.ongoing_projects.all %}
-                    </div>
-                </div>
-                <div class="view-detail" style="display: none;"></div>
-            </div>
-
-            <!-- Tab: Intentions -->
-            <div id="tab-intentions" class="tab-content" style="display: none;">
-                <div class="view-list">
-                    {% include "reports/partials/project_filter.html" with type="intentions" %}
-                    <div id="intentions-list-wrapper">
-                        {% include "reports/partials/intention_list.html" with intentions=page.purchase_intentions.all %}
-                    </div>
-                </div>
-                <div class="view-detail" style="display: none;"></div>
-            </div>
-
             <!-- Tab: Announcements -->
             <div id="tab-announcements" class="tab-content" style="display: none;">
-                <div class="view-list">
-                    {% include "reports/partials/project_filter.html" with type="announcements" %}
-                    <div id="announcements-list-wrapper">
-                        {% include "reports/partials/announcement_table.html" with announcements=page.report_announcements.all %}
-                    </div>
+                {% include "reports/partials/project_filter.html" with type="announcements" %}
+                <div id="announcements-list-wrapper">
+                    {% include "reports/partials/announcement_table.html" with announcements=page.report_announcements.all %}
                 </div>
-                <div class="view-detail" style="display: none;"></div>
-            </div>
-
-            <!-- Additional Tabs (Placeholders) -->
-            <div id="tab-contracts" class="tab-content" style="display: none;">
-                <div class="view-list">
-                    {% include "reports/partials/project_filter.html" with type="contracts" %}
-                    <div id="contracts-list-wrapper">
-                        {% include "reports/partials/contract_table.html" with contracts=page.report_contracts.all %}
-                    </div>
-                </div>
-                <div class="view-detail" style="display: none;"></div>
-            </div>
-            <div id="tab-bidding" class="tab-content" style="display: none;">
-                <div class="view-list">
-                    {% include "reports/partials/project_filter.html" with type="documents" %}
-                    <div id="documents-list-wrapper">
-                        {% include "reports/partials/document_table.html" with documents=page.report_documents.all %}
-                    </div>
-                </div>
-                <div class="view-detail" style="display: none;"></div>
             </div>
             <div id="tab-ai" class="tab-content" style="display: none;">
                 <h3 style="border-left: 4px solid #2196f3; padding-left: 10px; margin-bottom: 20px;">AI总结分析</h3>
@@ -621,67 +526,9 @@
 
     function triggerFetch(element) {
         const tabContent = element.closest('.tab-content');
-        if (tabContent) {
-            if (tabContent.id === 'tab-historical') fetchHistoricalProjects();
-            else if (tabContent.id === 'tab-ongoing') fetchOngoingProjects();
-            else if (tabContent.id === 'tab-intentions') fetchPurchaseIntentions();
-            else if (tabContent.id === 'tab-announcements') fetchAnnouncements();
-            else if (tabContent.id === 'tab-contracts') fetchContracts();
-            else if (tabContent.id === 'tab-bidding') fetchBiddingDocuments();
+        if (tabContent && tabContent.id === 'tab-announcements') {
+            fetchAnnouncements();
         }
-    }
-
-    // --- Fetch Functions (Copied & Cleaned) ---
-    function fetchHistoricalProjects() {
-        const reportIdInput = document.querySelector('.report-id-input');
-        if (!reportIdInput) return;
-        const reportId = reportIdInput.value;
-        const tabContainer = document.getElementById('tab-historical');
-        const searchInput = tabContainer.querySelector('.project-search-input');
-
-        const params = getFilterParams(tabContainer);
-        const url = `/api/report/filter/${reportId}/?q=${encodeURIComponent(params.q)}&time=${params.time}&amount=${params.amount}`;
-
-        fetch(url).then(res => res.text()).then(html => {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
-            const newTable = doc.querySelector('.project-table-container');
-            if (newTable) document.getElementById('historical-table-wrapper').innerHTML = newTable.outerHTML;
-        });
-    }
-
-    function fetchOngoingProjects() {
-        const reportIdInput = document.querySelector('.report-id-input');
-        if (!reportIdInput) return;
-        const reportId = reportIdInput.value;
-        const tabContainer = document.getElementById('tab-ongoing');
-
-        const params = getFilterParams(tabContainer);
-        const url = `/api/report/filter/ongoing/${reportId}/?q=${encodeURIComponent(params.q)}&time=${params.time}&amount=${params.amount}`;
-
-        fetch(url).then(res => res.text()).then(html => {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
-            const newTable = doc.querySelector('.ongoing-project-table-container');
-            if (newTable) document.getElementById('ongoing-table-wrapper').innerHTML = newTable.outerHTML;
-        });
-    }
-
-    function fetchPurchaseIntentions() {
-        const reportIdInput = document.querySelector('.report-id-input');
-        if (!reportIdInput) return;
-        const reportId = reportIdInput.value;
-        const tabContainer = document.getElementById('tab-intentions');
-
-        const params = getFilterParams(tabContainer);
-        const url = `/api/report/filter/intentions/${reportId}/?q=${encodeURIComponent(params.q)}&time=${params.time}&amount=${params.amount}&region=${encodeURIComponent(params.region)}`;
-
-        fetch(url).then(res => res.text()).then(html => {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
-            const newList = doc.querySelector('.intention-list');
-            if (newList) document.getElementById('intentions-list-wrapper').innerHTML = newList.outerHTML;
-        });
     }
 
     function fetchAnnouncements() {
@@ -702,48 +549,6 @@
             const doc = parser.parseFromString(html, 'text/html');
             const newList = doc.querySelector('.announcement-list-container');
             if (newList) document.getElementById('announcements-list-wrapper').innerHTML = newList.outerHTML;
-        });
-    }
-
-    function fetchContracts() {
-        const reportIdInput = document.querySelector('.report-id-input');
-        if (!reportIdInput) return;
-        const reportId = reportIdInput.value;
-        const tabContainer = document.getElementById('tab-contracts');
-
-        const params = getFilterParams(tabContainer);
-
-        const url = `/api/report/filter/contracts/${reportId}/?q=${encodeURIComponent(params.q)}&time=${params.time}&amount=${params.amount}&region=${encodeURIComponent(params.region)}`;
-
-        fetch(url).then(res => res.text()).then(html => {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
-            const newList = doc.querySelector('.contract-list-container');
-            if (newList) document.getElementById('contracts-list-wrapper').innerHTML = newList.outerHTML;
-        });
-    }
-
-    function fetchBiddingDocuments() {
-        const reportIdInput = document.querySelector('.report-id-input');
-        if (!reportIdInput) return;
-        const reportId = reportIdInput.value;
-        const tabContainer = document.getElementById('tab-bidding');
-
-        const params = getFilterParams(tabContainer);
-        // Special case for type
-        const typeFilterEl = tabContainer.querySelector('.filter-type .c-opt.active');
-        const typeFilter = typeFilterEl ? typeFilterEl.getAttribute('data-value') : 'all';
-        // File format filter
-        const formatFilterEl = tabContainer.querySelector('.filter-format .c-opt.active');
-        const formatFilter = formatFilterEl ? formatFilterEl.getAttribute('data-value') : 'all';
-
-        const url = `/api/report/filter/documents/${reportId}/?q=${encodeURIComponent(params.q)}&type=${typeFilter}&format=${formatFilter}`;
-
-        fetch(url).then(res => res.text()).then(html => {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
-            const newList = doc.querySelector('.document-list-container');
-            if (newList) document.getElementById('documents-list-wrapper').innerHTML = newList.outerHTML;
         });
     }
 

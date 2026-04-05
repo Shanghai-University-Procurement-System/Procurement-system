@@ -82,7 +82,7 @@ def run_ai_agent_and_create_report(request):
 
     return JsonResponse({'success': False, 'error': '仅支持 POST 请求'})
 def ai_analysis(request):
-    """AI 一键分析中间页面"""
+    """AI 分析中间页面"""
     keyword = request.GET.get('search', '').strip()
     if not keyword:
         return render(request, 'reports/ai_analysis.html', {'keyword': '未指定关键词'})
