@@ -95,6 +95,7 @@ async def orchestrator_planner_node(
 2. **MySQL专家使用规则**：
    - 只在涉及数据库查询、数据统计、数据分析等场景使用
    - 关键词：查询数据库、统计、数据分析、SQL、表、记录等
+   - **重要：如果用户问题涉及"招标"、"采购"、"公告"、"项目"、"成交"等关键词，必须使用 MySQL 专家查询数据库**
    - MySQL专家可以与检索专家并行执行
    - 如果问题既需要数据库查询又需要知识库检索，两者可并行
    
@@ -311,13 +312,19 @@ async def orchestrator_aggregator_node(
         all_observations.extend([f"[{agent_name}] {o}" for o in observations])
     
     logger.info(f"✅ 汇总完成，最终答案长度：{len(final_answer)} 字符")
-    
+
+    mysql_results = workspace.get_shared_data("mysql_results", {})
+    mysql_data = mysql_results.get("data", []) if mysql_results else []
+
+    logger.info(f"✅ 汇总完成，最终答案长度：{len(final_answer)} 字符")
+
     return {
         "final_answer": final_answer,
         "quality_score": quality_score,
         "is_complete": True,
         "thoughts": all_thoughts,
         "observations": all_observations,
+        "mysql_data": mysql_data,  # 🎯 新增：将数据库查出的列表暴露出去
     }
 
 
@@ -532,6 +539,7 @@ async def run_multi_agent(
             "thoughts": final_state.get("thoughts", []),
             "observations": final_state.get("observations", []),
             "quality_score": final_state.get("quality_score", 0.0),
+            "mysql_data": final_state.get("mysql_data", []),
             "thread_id": thread_id,
             "session_id": session_id,
         }
@@ -614,4 +622,3 @@ async def stream_multi_agent(
         "thread_id": thread_id,
         "timestamp": datetime.now().isoformat(),
     }
-

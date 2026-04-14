@@ -17,10 +17,31 @@
     <div class="container">
         {% if user.is_authenticated %}
         <!-- 搜索框 -->
-        <div class="search-bar">
-            <form method="get" action="">
-                <input type="text" name="search" placeholder="请输入关键字搜索..." value="{{ request.GET.search }}">
-                <button type="submit">搜索</button>
+        <div class="search-bar search-container">
+            <form method="get" action="" class="search-form">
+                <div style="position: relative;">
+                    <input 
+                        type="text" 
+                        name="search" 
+                        placeholder="请输入关键字搜索..." 
+                        value="{{ request.GET.search }}"
+                        class="search-input"
+                        id="searchInput"
+                    >
+                    <button type="submit" class="search-btn">搜索</button>
+                    
+                    <!-- ✨ 搜索建议下拉菜单 -->
+                    <ul class="search-suggestions" id="searchSuggestions" style="display: none;"></ul>
+                    
+                    <!-- 📋 搜索历史面板 -->
+                    <div class="search-history-panel" id="searchHistoryPanel" style="display: none;">
+                        <div class="history-header">
+                            <h4>最近搜索</h4>
+                            <button type="button" class="clear-history-btn" id="clearHistoryBtn">清空</button>
+                        </div>
+                        <ul class="history-list" id="historyList"><!-- 动态填充 --></ul>
+                    </div>
+                </div>
             </form>
         </div>
         {% else %}
@@ -36,6 +57,9 @@
         <!-- 筛选区域 -->
         <div class="filter-section">
             <form method="get" action="" id="filterForm">
+                <!-- ✅ 修复：保留搜索值隐藏字段 -->
+                <input type="hidden" name="search" value="{{ request.GET.search }}">
+                
                 <!-- 时间筛选 -->
                 <div class="filter-group">
                     <label>时间筛选：</label>
@@ -124,7 +148,15 @@
 
         <!-- 结果统计 -->
         <div class="result-stats">
-            <p>共找到 <strong>{{ total_count }}</strong> 条数据</p>
+            {% if search_active %}
+                <!-- ✅ 搜索时显示特定的统计信息 -->
+                <p>🔍 搜索关键字：<strong>"{{ search_query }}"</strong> 
+                   <span style="margin-left: 20px;">找到 <strong>{{ total_count }}</strong> 条相关公告</span>
+                   <a href="?" style="margin-left: 10px; color: #0066cc; text-decoration: none;">【清除搜索】</a>
+                </p>
+            {% else %}
+                <p>共找到 <strong>{{ total_count }}</strong> 条数据</p>
+            {% endif %}
         </div>
 
         <!-- 公告列表 -->
@@ -133,10 +165,25 @@
             <div class="announcement-item">
                 <div class="announcement-item-header">
                     <h3 class="announcement-title">
-                        <a href="{% pageurl announcement %}">{{ announcement.title }}</a>
+                        <a href="{% pageurl announcement %}">
+                            <!-- ✨ 优化1：使用高亮的标题 -->
+                            {% if search_active and announcement.highlighted_title %}
+                                {{ announcement.highlighted_title|safe }}
+                            {% else %}
+                                {{ announcement.title }}
+                            {% endif %}
+                        </a>
                     </h3>
                     <span class="announcement-date">发布时间：{{ announcement.date|date:"Y-m-d" }}</span>
                 </div>
+                
+                <!-- ✨ 高亮的内容预览 -->
+                {% if search_active and announcement.highlighted_content %}
+                <div class="announcement-preview">
+                    <p class="content-preview">{{ announcement.highlighted_content|safe }}...</p>
+                </div>
+                {% endif %}
+                
                 <div class="announcement-tags">
                     <span class="tag tag-type type-{{ announcement.announcement_type }}">
                         {{ announcement.get_announcement_type_display }}
@@ -167,7 +214,25 @@
                 {% endif %}
             </div>
             {% empty %}
-            <p class="no-results">暂无公告</p>
+            <!-- ✅ 修复：优化无结果提示 -->
+            {% if search_active %}
+            <div class="no-results-container" style="text-align: center; padding: 40px 20px; background: #f9f9f9; border-radius: 8px; margin: 20px 0;">
+                <p style="font-size: 18px; color: #666; margin-bottom: 15px;">😢 未找到与 "<strong>{{ search_query }}</strong>" 相关的公告</p>
+                <p style="color: #999; margin-bottom: 20px;">建议：</p>
+                <ul style="text-align: left; display: inline-block; color: #666; line-height: 1.8;">
+                    <li>✓ 检查关键字拼写是否正确</li>
+                    <li>✓ 尝试使用更通用或更简洁的搜索词</li>
+                    <li>✓ 尝试搜索相关的其他关键词</li>
+                    <li>✓ 可以使用筛选功能浏览其他公告</li>
+                </ul>
+                <p style="margin-top: 20px;"><a href="?" style="color: #0066cc; text-decoration: none;">【查看所有公告】</a></p>
+            </div>
+            {% else %}
+            <div class="no-results-container" style="text-align: center; padding: 40px 20px; background: #f9f9f9; border-radius: 8px; margin: 20px 0;">
+                <p style="font-size: 18px; color: #666;">😢 暂无符合条件的公告</p>
+                <p style="color: #999; margin-top: 10px;">请尝试调整筛选条件</p>
+            </div>
+            {% endif %}
             {% endfor %}
         </div>
 
@@ -190,4 +255,289 @@
         {% endif %}
     </div>
 </div>
+
+<!-- ============ 【中期优化】搜索功能样式和脚本 ============ -->
+<style>
+/* ✨ 搜索结果高亮样式 */
+.search-highlight {
+    background-color: #FFFF00;
+    color: #000;
+    font-weight: bold;
+    padding: 2px 4px;
+    border-radius: 2px;
+}
+
+/* 搜索建议下拉菜单 */
+.search-suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #ddd;
+    border-top: none;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    z-index: 1000;
+    max-height: 300px;
+    overflow-y: auto;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.search-suggestions li {
+    padding: 10px 15px;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f0f0;
+    transition: background-color 0.2s;
+}
+
+.search-suggestions li:hover {
+    background-color: #f5f5f5;
+}
+
+/* 搜索历史面板 */
+.search-history-panel {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #ddd;
+    border-top: none;
+    padding: 10px;
+    z-index: 999;
+    max-height: 250px;
+    overflow-y: auto;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #f0f0f0;
+    margin-bottom: 8px;
+}
+
+.history-header h4 {
+    margin: 0;
+    font-size: 14px;
+    color: #333;
+}
+
+.clear-history-btn {
+    background: none;
+    border: none;
+    color: #0066cc;
+    cursor: pointer;
+    font-size: 12px;
+    text-decoration: underline;
+}
+
+.clear-history-btn:hover {
+    color: #0052a3;
+}
+
+.history-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.history-item {
+    padding: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.history-item:hover {
+    background-color: #f9f9f9;
+}
+
+.history-item a {
+    flex: 1;
+    color: #0066cc;
+    text-decoration: none;
+    font-size: 13px;
+}
+
+.history-item a:hover {
+    text-decoration: underline;
+}
+
+.delete-item {
+    background: none;
+    border: none;
+    color: #999;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0 5px;
+    transition: color 0.2s;
+}
+
+.delete-item:hover {
+    color: #ff4444;
+}
+
+/* 内容预览样式 */
+.announcement-preview {
+    padding: 8px 0;
+    color: #666;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.content-preview {
+    margin: 0;
+    color: #888;
+}
+
+/* 搜索容器 */
+.search-container {
+    position: relative;
+}
+
+.search-form > div {
+    position: relative;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('searchInput');
+    const suggestionsContainer = document.getElementById('searchSuggestions');
+    const historyPanel = document.getElementById('searchHistoryPanel');
+    const historyList = document.getElementById('historyList');
+    const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+    let debounceTimer;
+    
+    // ============ 搜索建议功能 ============
+    searchInput.addEventListener('input', function() {
+        clearTimeout(debounceTimer);
+        const query = this.value.trim();
+        
+        if (query.length < 2) {
+            suggestionsContainer.innerHTML = '';
+            suggestionsContainer.style.display = 'none';
+            return;
+        }
+        
+        debounceTimer = setTimeout(async () => {
+            try {
+                const response = await fetch(`/api/search-suggestions/?q=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                
+                if (data.success && data.suggestions && data.suggestions.length > 0) {
+                    suggestionsContainer.innerHTML = data.suggestions
+                        .map(s => `<li class="suggestion-item">${escapeHtml(s)}</li>`)
+                        .join('');
+                    suggestionsContainer.style.display = 'block';
+                } else {
+                    suggestionsContainer.style.display = 'none';
+                }
+            } catch (error) {
+                console.error('搜索建议加载失败:', error);
+                suggestionsContainer.style.display = 'none';
+            }
+        }, 300);
+    });
+    
+    // 点击建议项进行搜索
+    document.addEventListener('click', function(e) {
+        if (e.target.classList.contains('suggestion-item')) {
+            searchInput.value = e.target.textContent;
+            document.querySelector('.search-form').submit();
+        }
+    });
+    
+    // ============ 搜索历史功能 ============
+    searchInput.addEventListener('focus', loadSearchHistory);
+    
+    async function loadSearchHistory() {
+        try {
+            const response = await fetch('/api/search-history/');
+            const data = await response.json();
+            
+            if (data.success && data.history && data.history.length > 0) {
+                historyList.innerHTML = data.history
+                    .map(item => `
+                        <li class="history-item">
+                            <a href="?search=${encodeURIComponent(item.query)}">${escapeHtml(item.query)}</a>
+                            <button class="delete-item" data-query="${escapeHtml(item.query)}" type="button">✕</button>
+                        </li>
+                    `)
+                    .join('');
+                historyPanel.style.display = 'block';
+            } else {
+                historyPanel.style.display = 'none';
+            }
+        } catch (error) {
+            console.error('搜索历史加载失败:', error);
+        }
+    }
+    
+    // 删除历史项
+    document.addEventListener('click', async function(e) {
+        if (e.target.classList.contains('delete-item')) {
+            e.preventDefault();
+            const query = e.target.dataset.query;
+            
+            try {
+                const response = await fetch(`/api/search-history/delete/${encodeURIComponent(query)}/`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    loadSearchHistory(); // 重新加载列表
+                }
+            } catch (error) {
+                console.error('删除历史失败:', error);
+            }
+        }
+    });
+    
+    // 清空所有历史
+    clearHistoryBtn.addEventListener('click', async function(e) {
+        e.preventDefault();
+        
+        if (!confirm('确定要清空所有搜索历史吗?')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/search-history/clear/', {
+                method: 'POST'
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                loadSearchHistory();
+            }
+        } catch (error) {
+            console.error('清空历史失败:', error);
+        }
+    });
+    
+    // 点击外部关闭建议和历史
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('.search-container')) {
+            suggestionsContainer.style.display = 'none';
+            historyPanel.style.display = 'none';
+        }
+    });
+    
+    // HTML 转义函数
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+});
+</script>
 {% endblock %}

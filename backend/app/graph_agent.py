@@ -35,7 +35,7 @@ async def invoke_llm(
         (回复内容, 完整响应数据)
     """
     payload: Dict[str, Any] = {
-        "model": "deepseek-r1",
+        "model": "deepseek-v3.2",
         "messages": messages,
         "temperature": temperature,
         "stream": False,
@@ -81,7 +81,7 @@ async def stream_llm(
     流式调用 DeepSeek API
     """
     payload: Dict[str, Any] = {
-        "model": "deepseek-r1",
+        "model": "deepseek-v3.2",
         "messages": messages,
         "temperature": temperature,
         "stream": True,

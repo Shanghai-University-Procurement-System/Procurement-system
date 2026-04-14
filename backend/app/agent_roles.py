@@ -1316,7 +1316,7 @@ async def mysql_specialist_node(
         # 动态导入MySQL管理器
         from .mysql.mysql_manager import MySQLDatabaseManager
 
-        # ✅ 修复：从配置中正确获取数据库连接信息
+        # 从配置中正确获取数据库连接信息
         mysql_config = getattr(settings, 'mysql_config', None)
 
         if not mysql_config:
@@ -1394,7 +1394,7 @@ async def mysql_specialist_node(
             messages=[{"role": "user", "content": table_selection_prompt}],
             settings=settings,
             temperature=0.1,
-            max_tokens=500,
+            max_tokens=2000,
         )
 
         selection_data = parse_json_from_llm(selection_response)
@@ -1415,36 +1415,40 @@ async def mysql_specialist_node(
         # ===== 步骤3: 创建语法正确的SQL查询语句 =====
         logger.info("💡 步骤3：生成SQL查询语句...")
 
+        # 🎯 核心修改：强化扩展关键词的 OR 查询逻辑
+        selected_keywords = state.get("selected_keywords", [])
+        keyword_condition_text = ""
+        if selected_keywords:
+            keyword_condition_text = f"\n【必须使用的查询关键词（必须用 OR 逻辑连接）】：{', '.join(selected_keywords)}\n"
+
         sql_generation_prompt = f"""你是一个专门设计用于与SQL数据库交互的AI智能体。
-给定一个输入问题，你需要按照以下步骤操作：
-1. 创建一个语法正确的MySQL查询语句
-2. 执行查询并查看结果
-3. 基于查询结果返回最终答案
+        给定一个输入问题，你需要创建一个语法正确的MySQL查询语句。
 
-【用户问题】：{user_query}
+        【用户问题】：{user_query}{keyword_condition_text}
 
-【数据库结构】：
-{schema_info}
+        【数据库结构】：
+        {schema_info}
 
-【要求】：
-- 除非用户明确指定要获取的具体实例数量，否则始终将查询结果限制为最多1000条（使用LIMIT 1000）
-- 你可以通过相关列对结果进行排序，以返回数据库中最有意义的示例
-- 永远不要查询特定表的所有列，只获取与问题相关的列
-- 绝对不要对数据库执行任何数据操作语言（DML）语句（如INSERT、UPDATE、DELETE、DROP等）
-- 只使用SELECT语句
+        【🔥核弹级强制要求 - 违背将导致系统崩溃🔥】：
+        1. **绝对禁止任何统计与聚合**：即使问题中包含“采购量”、“总金额”、“分布”、“趋势”、“统计”等要求统计的字眼，你也**绝对禁止**使用 GROUP BY、COUNT()、SUM()、AVG() 等聚合函数！你的唯一任务是查出包含这些数据的**原始明细记录**（如具体的项目名称、金额、时间、链接等）。
+        2. **🔥必须使用关键词过滤且严格使用 OR 连接🔥**：请在 WHERE 条件中，必须把提供的【查询关键词】加入到过滤条件中（对标题或项目名称等相关字段进行模糊匹配）。如果有多个关键词，它们之间**必须使用 OR 连接**包裹在括号内，绝对不能使用 AND。
+           ✅ 正确示例：WHERE (XMMC LIKE '%词1%' OR XMMC LIKE '%词2%' OR XMMC LIKE '%词3%')
+           ❌ 错误示例：WHERE XMMC LIKE '%词1%' AND XMMC LIKE '%词2%'
+        3. 必须限制数据条数：返回最多 1000 条（LIMIT 1000），并按时间降序排列（如果有时间字段）。
+        4. 绝对不要对数据库执行任何 DML 语句（INSERT、UPDATE、DELETE 等），只使用 SELECT。
 
-请以JSON格式输出（只返回JSON，不要其他内容）：
-{{
-  "sql_query": "你生成的SQL查询语句",
-  "explanation": "查询逻辑说明"
-}}
-"""
+        请严格以JSON格式输出（必须是原生合法的JSON字符串，绝对不要加 ```json 标签，不要换行截断）：
+        {{
+          "sql_query": "你生成的SQL明细查询语句",
+          "explanation": "简短说明"
+        }}
+        """
 
         sql_response, _ = await invoke_llm(
             messages=[{"role": "user", "content": sql_generation_prompt}],
             settings=settings,
-            temperature=0.1,
-            max_tokens=800,
+            temperature=0.0,
+            max_tokens=8000,
         )
 
         sql_data = parse_json_from_llm(sql_response)
@@ -1471,33 +1475,33 @@ async def mysql_specialist_node(
 
             fix_prompt = f"""以下SQL查询验证失败，请修复并重新生成。
 
-【原SQL】：
-{sql_query}
+        【原SQL】：
+        {sql_query}
 
-【错误信息】：
-{validation_result}
+        【错误信息】：
+        {validation_result}
 
-【数据库结构】：
-{schema_info}
+        【数据库结构】：
+        {schema_info}
 
-【要求】：
-- 修复语法错误
-- 确保只使用SELECT语句
-- 限制结果为最多1000条
-- 只查询与问题相关的列
+        【🔥强制要求🔥】：
+        1. 修复语法错误。
+        2. **再次强调：绝对禁止**使用聚合函数(GROUP BY/COUNT/SUM)！必须返回原始明细数据。
+        3. **必须包含关键词的 WHERE 模糊匹配条件，且多个关键词必须用 OR 连接！** 例如：WHERE (列名 LIKE '%词A%' OR 列名 LIKE '%词B%')。
+        4. 限制结果为 LIMIT 1000。
 
-请以JSON格式输出修复后的SQL：
-{{
-  "sql_query": "修复后的SQL",
-  "changes": "修改说明"
-}}
-"""
+        请以纯JSON格式输出修复后的SQL（绝对不要加 ```json 标签，确保JSON可被解析）：
+        {{
+          "sql_query": "修复后的明细查询SQL",
+          "changes": "修复了什么"
+        }}
+        """
 
             fix_response, _ = await invoke_llm(
                 messages=[{"role": "user", "content": fix_prompt}],
                 settings=settings,
-                temperature=0.1,
-                max_tokens=600,
+                temperature=0.0,
+                max_tokens=6000,
             )
 
             fix_data = parse_json_from_llm(fix_response)
@@ -1546,7 +1550,7 @@ async def mysql_specialist_node(
                 logger.info("📊 步骤6：基于查询结果生成最终答案...")
 
                 # 限制显示的数据量，避免token过多
-                display_data = result_data[:10] if isinstance(result_data, list) else result_data
+                display_data = result_data[:1000] if isinstance(result_data, list) else result_data
 
                 answer_prompt = f"""你是一个SQL数据库专家。请基于查询结果，用自然语言回答用户的问题。
 
@@ -1554,7 +1558,7 @@ async def mysql_specialist_node(
 
 【执行的SQL】：{sql_query}
 
-【查询结果】（共{result_count}条，显示前10条）：
+【查询结果】（共{result_count}条）：
 {json.dumps(display_data, ensure_ascii=False, indent=2)}
 
 【要求】：
@@ -1570,7 +1574,7 @@ async def mysql_specialist_node(
                     messages=[{"role": "user", "content": answer_prompt}],
                     settings=settings,
                     temperature=0.3,
-                    max_tokens=500,
+                    max_tokens=1500,
                 )
 
                 final_answer = final_answer.strip()
@@ -1593,7 +1597,7 @@ async def mysql_specialist_node(
                 }
                 observations.append(final_answer)
 
-        # 存储结果到共享工作空间（模仿retrieval_specialist_node）
+        # 存储结果到共享工作空间
         workspace.store_agent_result(agent_id, mysql_results)
         workspace.set_shared_data("mysql_results", mysql_results)
 
@@ -1616,6 +1620,7 @@ async def mysql_specialist_node(
         return {
             "agent_thoughts": {agent_id: thoughts},
             "agent_observations": {agent_id: observations},
+            "mysql_data": mysql_results.get("data", []),
         }
 
     except Exception as e:
@@ -1632,8 +1637,6 @@ async def mysql_specialist_node(
             "agent_thoughts": {agent_id: [f"执行失败: {str(e)}"]},
             "error": str(e),
         }
-
-
 # ==================== 智能体注册表 ====================
 
 AGENT_REGISTRY = {
@@ -1896,4 +1899,3 @@ def get_default_prompts() -> List[Dict[str, Any]]:
 只返回 JSON，不要其他解释。"""
         },
     ]
-

@@ -1,14 +1,13 @@
 from django.conf import settings
 from django.urls import include, path
 from django.contrib import admin
-from django.urls import path
-from reports.views import run_ai_agent_and_create_report
 from wagtail.admin import urls as wagtailadmin_urls
 from wagtail import urls as wagtail_urls
 from wagtail.documents import urls as wagtaildocs_urls
 from custom_auth.views import get_fastapi_token
 from search import views as search_views
 from reports import views as report_views
+from announcements import views as announcements_views
 
 urlpatterns = [
     path("django-admin/", admin.site.urls),
@@ -16,9 +15,7 @@ urlpatterns = [
     path("documents/", include(wagtaildocs_urls)),
     path("search/", search_views.search, name="search"),
     path("reports/ai-analysis/", report_views.ai_analysis, name="ai_analysis"),
-    path("chat/", report_views.chat_home, name="chat_home"), # 全新的纯聊天入口页
-    path("api/expand-keywords/", report_views.expand_keywords, name="expand_keywords"), # 提取关键词 API
-    path("api/run-agent/", report_views.run_agent, name="run_agent"), # 执行多智能体生成报告 API
+    path("chat/", report_views.chat_home, name="chat_home"),
     path("api/report/update/<int:report_id>/", report_views.update_report_content, name="update_report_content"),
     path("api/report/filter/<int:report_id>/", report_views.filter_historical_projects, name="filter_historical_projects"),
     path("api/report/filter/ongoing/<int:report_id>/", report_views.filter_ongoing_projects, name="filter_ongoing_projects"),
@@ -26,11 +23,21 @@ urlpatterns = [
     path("api/report/filter/announcements/<int:report_id>/", report_views.filter_announcements, name="filter_announcements"),
     path("api/report/filter/contracts/<int:report_id>/", report_views.filter_contracts, name="filter_contracts"),
     path("api/report/filter/documents/<int:report_id>/", report_views.filter_documents, name="filter_documents"),
-    path("accounts/", include("custom_auth.urls")), # Override password reset
+    path("accounts/", include("custom_auth.urls")),
     path("accounts/", include("allauth.urls")),
-    path('api/run-agent/', run_ai_agent_and_create_report, name='run_agent'),
     path('api/get-token/', get_fastapi_token, name='get_fastapi_token'),
     path("api/upload-temp/", report_views.upload_temp_file, name="upload_temp_file"),
+    path('api/report/create-from-ai/', report_views.create_report_from_ai, name='create_report_from_ai'),
+    
+    # ============ 【中期优化】搜索功能 API ============
+    # 📋 搜索建议
+    path('api/search-suggestions/', announcements_views.search_suggestions, name='search_suggestions'),
+    # 🔍 用户搜索历史
+    path('api/search-history/', announcements_views.get_search_history, name='get_search_history'),
+    # 🗑️ 清空搜索历史
+    path('api/search-history/clear/', announcements_views.clear_search_history, name='clear_search_history'),
+    # ❌ 删除特定搜索历史
+    path('api/search-history/delete/<str:query>/', announcements_views.delete_search_history_item, name='delete_search_history_item'),
 ]
 
 

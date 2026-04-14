@@ -521,8 +521,46 @@
         toggle.classList.toggle('open');
         content.classList.toggle('open');
     }
-
+    function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
 // ===== 核心异步执行流 =====
+    function parseSseChunk(chunk) {
+        const lines = chunk.split('\n');
+        let eventName = '';
+        let dataText = '';
+
+        for (const line of lines) {
+            if (line.startsWith('event: ')) {
+                eventName = line.slice(7).trim();
+            } else if (line.startsWith('data: ')) {
+                dataText = line.slice(6).trim();
+            }
+        }
+
+        if (!dataText) {
+            return { eventName, payload: null };
+        }
+
+        try {
+            return { eventName, payload: JSON.parse(dataText) };
+        } catch (error) {
+            console.warn('JSON 解析失败:', dataText.substring(0, 100), error);
+            return { eventName, payload: null };
+        }
+    }
+
     async function runAnalysisFlow() {
         try {
             // 0. 解析 URL 参数获取用户原始提问
@@ -532,7 +570,13 @@
             // 提取前端存储的 Token (确保发送给 FastAPI 时能通过身份认证)
             const jwtToken = localStorage.getItem('access_token') || localStorage.getItem('token') || '';
 
-            document.getElementById('keywordDisplay').innerText = "AI 正在解构您的需求...";
+            const keywordDisplay = document.getElementById('keywordDisplay');
+            const associationSection = document.getElementById('associationSection');
+            const thinkingToggle = document.getElementById('thinkingToggle');
+            const thinkingContent = document.getElementById('thinkingContent');
+            const tagsContainer = document.getElementById('keywordTags');
+
+            keywordDisplay.innerText = 'AI 正在解析您的需求...';
 
             // ==========================================
             // Step 1: 准备与初始化
@@ -549,12 +593,12 @@
             activateStep('step2');
             setProgress(30, '大语言模型正在深度理解需求并扩充维度...');
 
-            document.getElementById('associationSection').classList.add('visible');
-            document.getElementById('thinkingToggle').classList.add('open');
-            document.getElementById('thinkingContent').classList.add('open');
+            associationSection.classList.add('visible');
+            thinkingToggle.classList.add('open');
+            thinkingContent.classList.add('open');
 
             // 🎯 【修改点 1：精确指向 8001 端口】
-            const expandRes = await fetch('http://127.0.0.1:8001/api/chat/expand-keywords', {
+            const expandResponse = await fetch('http://127.0.0.1:8001/api/chat/expand-keywords', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -563,28 +607,29 @@
                 body: JSON.stringify({ query: originalQuery })
             });
 
-            if (!expandRes.ok) {
-                if (expandRes.status === 401) throw new Error('身份认证失败(401)：请检查 Token 是否有效');
-                if (expandRes.status === 403) throw new Error('拒绝访问(403)：请检查跨域CORS配置');
-                throw new Error(`关键词扩充请求失败 (HTTP ${expandRes.status})`);
+            if (!expandResponse.ok) {
+                if (expandResponse.status === 401) throw new Error('身份认证失败(401)：请检查 Token 是否有效');
+                if (expandResponse.status === 403) throw new Error('拒绝访问(403)：请检查跨域 CORS 配置');
+                throw new Error(`关键词扩展失败 (HTTP ${expandResponse.status})`);
             }
 
-            const expandData = await expandRes.json();
-            const associatedWords = expandData.keywords || ["未能提取到有效关键词"];
+            const expandData = await expandResponse.json();
+            const associatedWords = Array.isArray(expandData.keywords) && expandData.keywords.length
+                ? expandData.keywords
+                : ['未能提取到有效关键词'];
 
             // 动态替换顶部标题
-            document.getElementById('keywordDisplay').innerText = associatedWords.join(' | ');
+            keywordDisplay.innerText = associatedWords.join(' | ');
 
             // 思考过程动画
-            const thinkingContent = document.getElementById('thinkingContent');
-            const thinkingText = '["' + associatedWords.join('", "') + '"]';
+            tagsContainer.innerHTML = '';
+            const thinkingText = JSON.stringify(associatedWords);
             for (let i = 0; i <= thinkingText.length; i++) {
                 thinkingContent.textContent = thinkingText.substring(0, i);
-                await new Promise(r => setTimeout(r, 20));
+                await new Promise(resolve => setTimeout(resolve, 20));
             }
 
-            setProgress(45, '正在渲染多维分析视角...');
-            const tagsContainer = document.getElementById('keywordTags');
+            setProgress(45, '正在渲染分析维度...');
 
             for (let w = 0; w < associatedWords.length; w++) {
                 const tag = document.createElement('span');
@@ -592,16 +637,16 @@
                 tag.innerHTML = '<span class="tag-check">✓</span> ' + associatedWords[w];
                 tagsContainer.appendChild(tag);
 
-                await new Promise(r => setTimeout(r, 50));
+                await new Promise(resolve => setTimeout(resolve, 50));
                 tag.classList.add('show');
 
-                let pct = 45 + Math.round(((w + 1) / associatedWords.length) * 15);
+                const pct = 45 + Math.round(((w + 1) / associatedWords.length) * 15);
                 setProgress(pct, `已锁定 ${w + 1}/${associatedWords.length} 个分析维度`);
-                await new Promise(r => setTimeout(r, 250));
+                await new Promise(resolve => setTimeout(resolve, 250));
             }
 
             completeStep('step2');
-            setProgress(60, '需求拆解与维度扩充完成 ✓');
+            setProgress(60, '需求理解与关键词扩展完成');
 
             // ==========================================
             // Step 3: 调用 FastAPI (8001端口) 流式多智能体系统
@@ -609,95 +654,111 @@
             activateStep('step3');
             setProgress(70, '多智能体正在检索知识库并生成深度报告...');
 
-            const requestBody = {
-                messages: [{ role: "user", content: originalQuery }],
-                selected_keywords: associatedWords,
-                use_knowledge_base: true,
-                use_tools: true,
-                execution_mode: "sequential"
-            };
-
-            // 🎯 【修改点 2：精确指向 8001 端口的 stream 接口】
-            const agentRes = await fetch('http://127.0.0.1:8001/chat/multi-agent/stream', {
+            const agentResponse = await fetch('http://127.0.0.1:8001/chat/multi-agent/stream', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${jwtToken}`
                 },
-                body: JSON.stringify(requestBody)
+                body: JSON.stringify({
+                    messages: [{ role: 'user', content: originalQuery }],
+                    selected_keywords: associatedWords,
+                    use_knowledge_base: true,
+                    use_tools: true,
+                    execution_mode: 'sequential'
+                })
             });
 
-            if (!agentRes.ok) {
-                if (agentRes.status === 401) throw new Error('身份认证失败 (401)：请检查 Token');
-                if (agentRes.status === 403) throw new Error('拒绝访问 (403)：请检查跨域CORS配置');
-                throw new Error(`网络请求异常 (HTTP ${agentRes.status})`);
+            if (!agentResponse.ok) {
+                if (agentResponse.status === 401) throw new Error('身份认证失败(401)：请检查 Token');
+                if (agentResponse.status === 403) throw new Error('拒绝访问(403)：请检查跨域 CORS 配置');
+                throw new Error(`多智能体请求失败 (HTTP ${agentResponse.status})`);
             }
 
-            // 解析 SSE 数据流
-            const reader = agentRes.body.getReader();
+            const reader = agentResponse.body.getReader();
             const decoder = new TextDecoder('utf-8');
-            let done = false;
             let threadId = null;
             let buffer = '';
+            let finalReportContent = '';
 
-            while (!done) {
-                const { value, done: readerDone } = await reader.read();
-                if (readerDone) { done = true; break; }
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) {
+                    break;
+                }
 
                 buffer += decoder.decode(value, { stream: true });
-                let parts = buffer.split('\n\n');
-                buffer = parts.pop();
+                const parts = buffer.split('\n\n');
+                buffer = parts.pop() || '';
 
                 for (const part of parts) {
-                    const lines = part.split('\n');
-                    let currentEvent = '';
-                    let dataStr = '';
-
-                    for (const line of lines) {
-                        if (line.startsWith('event: ')) {
-                            currentEvent = line.replace('event: ', '').trim();
-                        } else if (line.startsWith('data: ')) {
-                            dataStr = line.replace('data: ', '').trim();
-                        }
+                    const { eventName, payload } = parseSseChunk(part);
+                    if (!payload) {
+                        continue;
                     }
 
-                    if (dataStr) {
-                        let parsedData = null;
-                        try {
-                            parsedData = JSON.parse(dataStr);
-                        } catch (e) {
-                            continue;
-                        }
-
-                        if (parsedData) {
-                            // 捕获后端的 Python 真实报错
-                            if (currentEvent === 'error') {
-                                throw new Error(`后端报错：${parsedData.message}`);
-                            }
-
-                            // 捕获当前正在执行的 Agent
-                            if (currentEvent === 'agent_execution') {
-                                setProgress(80, `智能体 [${parsedData.agent}] 正在执行深度分析...`);
-                            }
-
-                            // 捕获最终的 thread_id
-                            if (currentEvent === 'completed') {
-                                threadId = parsedData.thread_id;
-                                setProgress(100, '多智能体分析完毕！报告已生成，正在跳转...');
-                            }
-                        }
+                    if (eventName === 'error') {
+                        throw new Error(`后端报错：${payload.message}`);
                     }
+
+                    if (eventName === 'agent_execution') {
+                        setProgress(80, `智能体 [${payload.agent}] 正在执行深度分析...`);
+                        continue;
+                    }
+
+                    if (eventName === 'orchestrator_aggregate' && payload.data?.final_answer) {
+                        finalReportContent = payload.data.final_answer;
+                        continue;
+                    }
+
+                    if (eventName === 'assistant_final' && payload.content) {
+                        finalReportContent = payload.content;
+                        continue;
+                    }
+
+                    if (eventName === 'completed') {
+                        threadId = payload.thread_id;
+                        break;
+                    }
+                }
+
+                if (threadId) {
+                    break;
                 }
             }
 
-            if (threadId) {
-                completeStep('step3');
-                setTimeout(() => {
-                    window.location.href = `/chat/?new_report_id=${threadId}`;
-                }, 1000);
-            } else {
-                throw new Error('流式执行结束，但未获取到有效的 thread_id');
+            if (!threadId) {
+                throw new Error('分析完成，但未返回有效的 thread_id');
             }
+
+            setProgress(90, '多智能体分析完毕，正在保存报告...');
+
+            const saveResponse = await fetch('/api/report/create-from-ai/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken') || ''
+                },
+                body: JSON.stringify({
+                    title: originalQuery,
+                    content: finalReportContent,
+                    thread_id: threadId,
+                    expanded_keywords: associatedWords
+                })
+            });
+
+            if (!saveResponse.ok) {
+                const errorText = await saveResponse.text();
+                console.error('保存失败:', saveResponse.status, errorText);
+                throw new Error(`保存报告失败 (HTTP ${saveResponse.status})`);
+            }
+
+            const saveData = await saveResponse.json();
+            completeStep('step3');
+            setProgress(100, '报告落库成功，正在跳转...');
+            setTimeout(() => {
+                window.location.href = saveData.redirect_url;
+            }, 500);
 
         } catch (error) {
             console.error('流程中断:', error);

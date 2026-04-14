@@ -3,8 +3,9 @@
 {% block title %}{% block head_title %}{% endblock %} - 招投标信息平台{% endblock %}
 
 {% block content %}
+{% load static %}
 <div class="auth-container"
-    style="background: #0055a4; min-height: calc(100vh - 200px); display: flex; align-items: center; justify-content: center; padding: 40px 0;">
+    style="background: linear-gradient(rgba(0, 85, 164, 0.7), rgba(0, 85, 164, 0.85)), url('{% static "images/login_bg.jpg" %}') center/cover no-repeat; min-height: calc(100vh - 200px); display: flex; align-items: center; justify-content: center; padding: 40px 0;">
     <div class="auth-card"
         style="background: white; width: 100%; max-width: 450px; padding: 40px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
         <div class="auth-header" style="text-align: center; margin-bottom: 30px;">

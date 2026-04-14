@@ -1,482 +1,1244 @@
-from django.shortcuts import render, get_object_or_404
+import json
+import os
+import sys
+from collections import defaultdict
+from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
+from functools import lru_cache
+from pathlib import Path
+
+import pymysql
+from asgiref.sync import async_to_sync
+from django.conf import settings
+from django.core.paginator import Paginator
+from django.core.files.storage import FileSystemStorage
+from django.db import OperationalError
+from django.db.models import Q
 from django.http import JsonResponse
+from django.shortcuts import get_object_or_404, render
+from django.utils import timezone
+from django.utils.text import slugify
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
-from django.db.models import Q
-from django.utils import timezone
-from datetime import timedelta
-import json
-from .models import ReportPage, HistoricalProject, OngoingProject
-from django.conf import settings
-import httpx
-import json
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from wagtail.models import Page
-from .models import ReportIndexPage, ReportPage
+
+from .models import HistoricalProject, OngoingProject, ReportIndexPage, ReportPage
 
 
-@csrf_exempt
-def run_ai_agent_and_create_report(request):
-    """接收前端联想词，调用 FastAPI 智能体，并创建报告"""
-    if request.method == 'POST':
-        try:
-            data = json.loads(request.body)
-            keyword = data.get('keyword', '未知采购')
-            associated_words = data.get('associated_words', [])
+_PROCUREMENT_REGIONS = frozenset(
+    [
+        "全国",
+        "北京",
+        "天津",
+        "河北",
+        "山西",
+        "内蒙古",
+        "辽宁",
+        "吉林",
+        "黑龙江",
+        "上海",
+        "江苏",
+        "浙江",
+        "安徽",
+        "福建",
+        "江西",
+        "山东",
+        "河南",
+        "湖北",
+        "湖南",
+        "广东",
+        "广西",
+        "海南",
+        "重庆",
+        "四川",
+        "贵州",
+        "云南",
+        "西藏",
+        "陕西",
+        "甘肃",
+        "青海",
+        "宁夏",
+        "新疆",
+        "香港",
+        "澳门",
+        "台湾",
+    ]
+)
 
-            # 1. 组装发给智能体的 Prompt
-            prompt = f"请作为采购分析专家，针对核心关键词'{keyword}'以及相关联想词：{', '.join(associated_words)}，进行数据库检索、网络搜索和全面分析，并给出最终的总结报告。"
+_PROVINCE_NAMES = (
+    "\u5317\u4eac",
+    "\u5929\u6d25",
+    "\u6cb3\u5317",
+    "\u5c71\u897f",
+    "\u5185\u8499\u53e4",
+    "\u8fbd\u5b81",
+    "\u5409\u6797",
+    "\u9ed1\u9f99\u6c5f",
+    "\u4e0a\u6d77",
+    "\u6c5f\u82cf",
+    "\u6d59\u6c5f",
+    "\u5b89\u5fbd",
+    "\u798f\u5efa",
+    "\u6c5f\u897f",
+    "\u5c71\u4e1c",
+    "\u6cb3\u5357",
+    "\u6e56\u5317",
+    "\u6e56\u5357",
+    "\u5e7f\u4e1c",
+    "\u5e7f\u897f",
+    "\u6d77\u5357",
+    "\u91cd\u5e86",
+    "\u56db\u5ddd",
+    "\u8d35\u5dde",
+    "\u4e91\u5357",
+    "\u897f\u85cf",
+    "\u9655\u897f",
+    "\u7518\u8083",
+    "\u9752\u6d77",
+    "\u5b81\u590f",
+    "\u65b0\u7586",
+    "\u9999\u6e2f",
+    "\u6fb3\u95e8",
+    "\u53f0\u6e7e",
+)
 
-            # 2. 请求你的 FastAPI 多智能体接口
-            # 注意：请将这里的 URL 替换为你 FastAPI 实际运行的地址
-            fastapi_url = "http://127.0.0.1:8001/chat/multi-agent"
-            payload = {
-                "messages": [{"role": "user", "content": prompt}],
-                "use_knowledge_base": True,
-                "use_tools": True,
-                "execution_mode": "sequential"
+_PROVINCE_ALIAS = {
+    "\u5168\u56fd": "\u5168\u56fd",
+    "\u4e2d\u56fd": "\u5168\u56fd",
+    "\u5317\u4eac": "\u5317\u4eac",
+    "\u5317\u4eac\u5e02": "\u5317\u4eac",
+    "\u5929\u6d25": "\u5929\u6d25",
+    "\u5929\u6d25\u5e02": "\u5929\u6d25",
+    "\u4e0a\u6d77": "\u4e0a\u6d77",
+    "\u4e0a\u6d77\u5e02": "\u4e0a\u6d77",
+    "\u91cd\u5e86": "\u91cd\u5e86",
+    "\u91cd\u5e86\u5e02": "\u91cd\u5e86",
+    "\u6cb3\u5317": "\u6cb3\u5317",
+    "\u6cb3\u5317\u7701": "\u6cb3\u5317",
+    "\u5c71\u897f": "\u5c71\u897f",
+    "\u5c71\u897f\u7701": "\u5c71\u897f",
+    "\u5185\u8499\u53e4": "\u5185\u8499\u53e4",
+    "\u5185\u8499\u53e4\u81ea\u6cbb\u533a": "\u5185\u8499\u53e4",
+    "\u8fbd\u5b81": "\u8fbd\u5b81",
+    "\u8fbd\u5b81\u7701": "\u8fbd\u5b81",
+    "\u5409\u6797": "\u5409\u6797",
+    "\u5409\u6797\u7701": "\u5409\u6797",
+    "\u9ed1\u9f99\u6c5f": "\u9ed1\u9f99\u6c5f",
+    "\u9ed1\u9f99\u6c5f\u7701": "\u9ed1\u9f99\u6c5f",
+    "\u6c5f\u82cf": "\u6c5f\u82cf",
+    "\u6c5f\u82cf\u7701": "\u6c5f\u82cf",
+    "\u6d59\u6c5f": "\u6d59\u6c5f",
+    "\u6d59\u6c5f\u7701": "\u6d59\u6c5f",
+    "\u5b89\u5fbd": "\u5b89\u5fbd",
+    "\u5b89\u5fbd\u7701": "\u5b89\u5fbd",
+    "\u798f\u5efa": "\u798f\u5efa",
+    "\u798f\u5efa\u7701": "\u798f\u5efa",
+    "\u6c5f\u897f": "\u6c5f\u897f",
+    "\u6c5f\u897f\u7701": "\u6c5f\u897f",
+    "\u5c71\u4e1c": "\u5c71\u4e1c",
+    "\u5c71\u4e1c\u7701": "\u5c71\u4e1c",
+    "\u6cb3\u5357": "\u6cb3\u5357",
+    "\u6cb3\u5357\u7701": "\u6cb3\u5357",
+    "\u6e56\u5317": "\u6e56\u5317",
+    "\u6e56\u5317\u7701": "\u6e56\u5317",
+    "\u6e56\u5357": "\u6e56\u5357",
+    "\u6e56\u5357\u7701": "\u6e56\u5357",
+    "\u5e7f\u4e1c": "\u5e7f\u4e1c",
+    "\u5e7f\u4e1c\u7701": "\u5e7f\u4e1c",
+    "\u5e7f\u897f": "\u5e7f\u897f",
+    "\u5e7f\u897f\u58ee\u65cf\u81ea\u6cbb\u533a": "\u5e7f\u897f",
+    "\u6d77\u5357": "\u6d77\u5357",
+    "\u6d77\u5357\u7701": "\u6d77\u5357",
+    "\u56db\u5ddd": "\u56db\u5ddd",
+    "\u56db\u5ddd\u7701": "\u56db\u5ddd",
+    "\u8d35\u5dde": "\u8d35\u5dde",
+    "\u8d35\u5dde\u7701": "\u8d35\u5dde",
+    "\u4e91\u5357": "\u4e91\u5357",
+    "\u4e91\u5357\u7701": "\u4e91\u5357",
+    "\u897f\u85cf": "\u897f\u85cf",
+    "\u897f\u85cf\u81ea\u6cbb\u533a": "\u897f\u85cf",
+    "\u9655\u897f": "\u9655\u897f",
+    "\u9655\u897f\u7701": "\u9655\u897f",
+    "\u7518\u8083": "\u7518\u8083",
+    "\u7518\u8083\u7701": "\u7518\u8083",
+    "\u9752\u6d77": "\u9752\u6d77",
+    "\u9752\u6d77\u7701": "\u9752\u6d77",
+    "\u5b81\u590f": "\u5b81\u590f",
+    "\u5b81\u590f\u56de\u65cf\u81ea\u6cbb\u533a": "\u5b81\u590f",
+    "\u65b0\u7586": "\u65b0\u7586",
+    "\u65b0\u7586\u7ef4\u543e\u5c14\u81ea\u6cbb\u533a": "\u65b0\u7586",
+    "\u9999\u6e2f": "\u9999\u6e2f",
+    "\u9999\u6e2f\u7279\u522b\u884c\u653f\u533a": "\u9999\u6e2f",
+    "\u6fb3\u95e8": "\u6fb3\u95e8",
+    "\u6fb3\u95e8\u7279\u522b\u884c\u653f\u533a": "\u6fb3\u95e8",
+    "\u53f0\u6e7e": "\u53f0\u6e7e",
+    "\u53f0\u6e7e\u7701": "\u53f0\u6e7e",
+}
+
+
+def _ensure_project_root_on_path():
+    project_root = Path(__file__).resolve().parents[2]
+    if str(project_root) not in sys.path:
+        sys.path.append(str(project_root))
+    return project_root
+
+
+def _keyword_filter_or_show_all(queryset, raw_q, keyword_q):
+    raw_q = (raw_q or "").strip()
+    if not raw_q:
+        return queryset
+    narrowed = queryset.filter(keyword_q)
+    return narrowed if narrowed.exists() else queryset
+
+
+def _apply_time_filter(queryset, field_name, raw_value):
+    value = (raw_value or "all").strip().lower()
+    offsets = {
+        "1m": 30,
+        "3m": 90,
+        "6m": 180,
+        "1y": 365,
+        "3y": 365 * 3,
+    }
+    days = offsets.get(value)
+    if not days:
+        return queryset
+    threshold = timezone.now().date() - timedelta(days=days)
+    return queryset.filter(**{f"{field_name}__gte": threshold})
+
+
+def _apply_amount_filter(queryset, field_name, raw_value):
+    value = (raw_value or "all").strip().lower()
+    if not value or value == "all":
+        return queryset
+
+    try:
+        if value == "5000-inf":
+            return queryset.filter(**{f"{field_name}__gte": 5000})
+
+        min_value, max_value = map(float, value.split("-"))
+        return queryset.filter(
+            **{
+                f"{field_name}__gte": min_value,
+                f"{field_name}__lt": max_value,
             }
+        )
+    except ValueError:
+        return queryset
 
-            # 设置较长的 timeout，因为多智能体执行需要时间
-            with httpx.Client(timeout=300.0) as client:
-                response = client.post(fastapi_url, json=payload)
-                response.raise_for_status()
-                agent_result = response.json()
 
-            # 获取总结专家的最终输出
-            ai_summary = agent_result.get('reply', '智能体未能生成有效总结。')
+def _paginate_queryset(queryset, raw_page, per_page=15):
+    paginator = Paginator(queryset, per_page)
+    return paginator.get_page(raw_page or 1)
 
-            # 3. 在 Wagtail 中创建新的 ReportPage 节点
-            # 找到报告的父级页面 (ReportIndexPage)
-            index_page = ReportIndexPage.objects.first()
-            if not index_page:
-                return JsonResponse({'success': False, 'error': '未找到 ReportIndexPage 父节点'})
 
-            # 创建新的报告实例
-            new_report = ReportPage(
-                title=f"{keyword} 需求调查报告",
-                procurement_name=keyword,
-                ai_summary_analysis=ai_summary,  # 这里对应你第三张图中的字段
-                owner=request.user if request.user.is_authenticated else None
+def _first_present(row, *keys, default=None):
+    for key in keys:
+        if key in row:
+            value = row.get(key)
+            if value not in (None, "", []):
+                return value
+    return default
+
+
+def _safe_console_log(message):
+    text = str(message)
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        print(text.encode("unicode_escape", "backslashreplace").decode("ascii"))
+
+
+def _report_page_schema_error_response(exc):
+    error_text = str(exc)
+    if "reports_reportpage" not in error_text or "has no column named" not in error_text:
+        return None
+    _safe_console_log(f"[reports schema mismatch] {error_text}")
+    return JsonResponse(
+        {
+            "status": "error",
+            "message": "报告数据表结构未更新，请先执行 python manage.py migrate reports",
+        },
+        status=500,
+    )
+
+
+def _normalize_keywords(raw_keywords, fallback_query=""):
+    if isinstance(raw_keywords, str):
+        raw_keywords = [raw_keywords]
+
+    keywords = []
+    seen = set()
+    for item in raw_keywords or []:
+        keyword = str(item or "").strip()
+        if not keyword or keyword in seen:
+            continue
+        seen.add(keyword)
+        keywords.append(keyword[:100])
+
+    fallback = str(fallback_query or "").strip()
+    if not keywords and fallback:
+        keywords.append(fallback[:100])
+
+    return keywords[:50]
+
+
+def _build_mysql_announcement_match_clause(keywords, alias="cjgg"):
+    clauses = []
+    params = []
+    for keyword in keywords:
+        like_value = f"%{keyword}%"
+        clauses.append(
+            f"({alias}.GGBT LIKE %s OR {alias}.XMMC LIKE %s OR {alias}.BDXX LIKE %s)"
+        )
+        params.extend([like_value, like_value, like_value])
+    return " OR ".join(clauses), params
+
+
+def _norm_region(value):
+    region = _normalize_province_name(value)
+    return region or "\u5168\u56fd"
+
+
+def _normalize_province_name(value):
+    text = (str(value) if value is not None else "").strip()
+    if not text:
+        return ""
+
+    text = text.replace(" ", "")
+    if text in _PROVINCE_ALIAS:
+        return _PROVINCE_ALIAS[text]
+
+    simplified = (
+        text.replace("\u7701", "")
+        .replace("\u5e02", "")
+        .replace("\u81ea\u6cbb\u533a", "")
+        .replace("\u7279\u522b\u884c\u653f\u533a", "")
+        .replace("\u58ee\u65cf", "")
+        .replace("\u56de\u65cf", "")
+        .replace("\u7ef4\u543e\u5c14", "")
+    )
+    if simplified in _PROVINCE_ALIAS:
+        return _PROVINCE_ALIAS[simplified]
+
+    for province in _PROVINCE_NAMES:
+        if text.startswith(province) or simplified.startswith(province):
+            return province
+    return ""
+
+
+def _extract_province_from_text(value):
+    province = _normalize_province_name(value)
+    if province:
+        return province
+
+    text = str(value or "").strip().replace(" ", "")
+    if not text:
+        return ""
+
+    for alias, province in sorted(
+        _PROVINCE_ALIAS.items(),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    ):
+        if alias != "全国" and alias in text:
+            return province
+
+    for province in _PROVINCE_NAMES:
+        if province in text:
+            return province
+    return ""
+
+
+def _to_decimal(value):
+    if value in (None, ""):
+        return None
+    try:
+        return Decimal(str(value).replace(",", "").strip())
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
+def _parse_date(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+
+    text = str(value).strip()
+    candidates = [text, text[:19], text[:10]]
+    formats = (
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y/%m/%d %H:%M:%S",
+    )
+    for candidate in candidates:
+        for fmt in formats:
+            try:
+                return datetime.strptime(candidate, fmt).date()
+            except ValueError:
+                continue
+    return None
+
+
+def _build_unique_slug(parent_page, thread_id):
+    base_slug = slugify(thread_id) or f"report-{int(timezone.now().timestamp())}"
+    slug = base_slug
+    suffix = 2
+    siblings = parent_page.get_children()
+    while siblings.filter(slug=slug).exists():
+        slug = f"{base_slug}-{suffix}"
+        suffix += 1
+    return slug
+
+
+def _get_mysql_connection_kwargs():
+    _ensure_project_root_on_path()
+
+    mysql_config = {}
+    try:
+        from backend.app.config import get_settings as get_backend_settings
+
+        mysql_config = getattr(get_backend_settings(), "mysql_config", {}) or {}
+    except Exception as exc:
+        _safe_console_log(f"[mysql] load backend config failed: {exc}")
+
+    return {
+        "host": mysql_config.get("host", "127.0.0.1"),
+        "port": int(mysql_config.get("port", 3306)),
+        "user": mysql_config.get("username", "root"),
+        "password": mysql_config.get("password", ""),
+        "database": mysql_config.get("database", "test"),
+        "charset": "utf8mb4",
+        "cursorclass": pymysql.cursors.DictCursor,
+        "connect_timeout": 10,
+        "read_timeout": 20,
+        "write_timeout": 20,
+    }
+
+
+@lru_cache(maxsize=512)
+def _infer_buyer_region_with_llm(buyer_name):
+    buyer_name = str(buyer_name or "").strip()
+    if not buyer_name:
+        return ""
+
+    try:
+        _ensure_project_root_on_path()
+        from backend.app.config import get_settings as get_backend_settings
+        from backend.app.graph_agent import invoke_llm
+
+        backend_settings = get_backend_settings()
+        if not backend_settings.validate_api_key():
+            return ""
+
+        prompt = f"请直接告诉我{buyer_name}的省份，然后请只输出省份信息。"
+        reply, _ = async_to_sync(invoke_llm)(
+            messages=[{"role": "user", "content": prompt}],
+            settings=backend_settings,
+            temperature=0,
+            max_tokens=32,
+        )
+        return _extract_province_from_text(reply)
+    except Exception as exc:
+        _safe_console_log(
+            f"[llm] infer buyer region failed: buyer={buyer_name}, error={exc}"
+        )
+        return ""
+
+
+def _fill_top_buyer_regions_with_llm(top_buyer_rows, displayed_limit=10):
+    normalized_rows = []
+    for index, row in enumerate(top_buyer_rows or []):
+        row_copy = dict(row)
+        if index < displayed_limit and row_copy.get("region") == "-":
+            inferred_region = _infer_buyer_region_with_llm(
+                row_copy.get("buyer_name", "")
             )
+            if inferred_region:
+                row_copy["region"] = inferred_region
+        normalized_rows.append(row_copy)
+    return normalized_rows
 
-            # 将页面作为子节点添加到树中
-            index_page.add_child(instance=new_report)
 
-            # 保存为草稿（不直接发布，方便用户去后台复核修改）
-            new_report.save_revision()
+def _query_mysql_announcements_by_keywords(raw_keywords, fallback_query="", limit=None):
+    keywords = _normalize_keywords(raw_keywords, fallback_query=fallback_query)
+    if not keywords:
+        return []
 
-            # 4. 返回成功信息及新创建页面的 Wagtail 编辑链接
-            return JsonResponse({
-                'success': True,
-                'report_id': new_report.id,
-                'edit_url': f'/admin/pages/{new_report.id}/edit/'  # Wagtail 后台编辑地址
-            })
+    where_clause, params = _build_mysql_announcement_match_clause(
+        keywords,
+        alias="cjgg",
+    )
 
-        except Exception as e:
-            return JsonResponse({'success': False, 'error': str(e)})
+    sql = f"""
+        SELECT DISTINCT
+            cjgg.WID,
+            cjgg.GGFBRQ,
+            cjgg.GGBT,
+            cjgg.GGURL,
+            cjgg.XMBH,
+            cjgg.XMMC,
+            cjgg.CGRMC,
+            cjgg.CGRDZ,
+            cjgg.BDXX,
+            cjgg.CJSJ,
+            COALESCE(cjs_by_ggwid.CJJE, cjs_by_wid.CJJE) AS CJJE
+        FROM zc_wlsjcj_cjgg cjgg
+        LEFT JOIN (
+            SELECT GGWID AS link_wid, SUM(CJJE) AS CJJE
+            FROM zc_wlsjcj_cjs
+            WHERE GGWID IS NOT NULL AND GGWID <> ''
+            GROUP BY GGWID
+        ) cjs_by_ggwid ON cjs_by_ggwid.link_wid = cjgg.WID
+        LEFT JOIN (
+            SELECT WID AS link_wid, SUM(CJJE) AS CJJE
+            FROM zc_wlsjcj_cjs
+            WHERE WID IS NOT NULL AND WID <> ''
+            GROUP BY WID
+        ) cjs_by_wid ON cjs_by_wid.link_wid = cjgg.WID
+        WHERE {where_clause}
+        ORDER BY cjgg.GGFBRQ DESC, cjgg.CJSJ DESC
+    """
 
-    return JsonResponse({'success': False, 'error': '仅支持 POST 请求'})
+    if limit is not None:
+        sql += "\n        LIMIT %s"
+        params.append(int(limit))
+
+    connection = pymysql.connect(**_get_mysql_connection_kwargs())
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(sql, params)
+            rows = list(cursor.fetchall())
+            _safe_console_log(
+                f"[mysql] announcement query finished: keywords={keywords}, row_count={len(rows)}"
+            )
+            return rows
+    finally:
+        connection.close()
+
+
+def _format_stat_count(value, suffix=""):
+    try:
+        number = int(value or 0)
+    except (TypeError, ValueError):
+        number = 0
+    return f"{number:,}{suffix}"
+
+
+def _format_stat_amount(value, suffix=" 元"):
+    amount = _to_decimal(value) or Decimal("0")
+    text = f"{amount:,.2f}".rstrip("0").rstrip(".")
+    return f"{text}{suffix}"
+
+
+def _query_mysql_report_card_stats(raw_keywords, fallback_query=""):
+    keywords = _normalize_keywords(raw_keywords, fallback_query=fallback_query)
+    empty_stats = {
+        "stat_buyer_count": _format_stat_count(0, " 家"),
+        "stat_region_count": _format_stat_count(0, " 个"),
+        "stat_budget_total": _format_stat_amount(0),
+        "stat_transaction_total": _format_stat_amount(0),
+        "stat_announcement_count": _format_stat_count(0, " 条"),
+    }
+    if not keywords:
+        return empty_stats
+
+    where_clause, params = _build_mysql_announcement_match_clause(
+        keywords,
+        alias="cjgg",
+    )
+
+    announcement_stats_sql = f"""
+        SELECT
+            COUNT(*) AS announcement_count,
+            COUNT(DISTINCT NULLIF(TRIM(matched.CGRMC), '')) AS buyer_count
+        FROM (
+            SELECT DISTINCT cjgg.WID, cjgg.CGRMC
+            FROM zc_wlsjcj_cjgg cjgg
+            WHERE {where_clause}
+        ) matched
+    """
+
+    cjs_stats_sql = f"""
+        SELECT
+            COUNT(DISTINCT NULLIF(TRIM(cjs.region), '')) AS region_count,
+            COALESCE(SUM(cjs.CJJE), 0) AS total_amount
+        FROM zc_wlsjcj_cjs cjs
+        WHERE EXISTS (
+            SELECT 1
+            FROM (
+                SELECT DISTINCT cjgg.WID
+                FROM zc_wlsjcj_cjgg cjgg
+                WHERE {where_clause}
+            ) matched_gg
+            WHERE matched_gg.WID = cjs.GGWID OR matched_gg.WID = cjs.WID
+        )
+    """
+
+    connection = pymysql.connect(**_get_mysql_connection_kwargs())
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(announcement_stats_sql, params)
+            announcement_stats = cursor.fetchone() or {}
+
+            cursor.execute(cjs_stats_sql, params)
+            cjs_stats = cursor.fetchone() or {}
+    finally:
+        connection.close()
+
+    total_amount = _to_decimal(cjs_stats.get("total_amount")) or Decimal("0")
+    stats = {
+        "stat_buyer_count": _format_stat_count(
+            announcement_stats.get("buyer_count"),
+            " 家",
+        ),
+        "stat_region_count": _format_stat_count(
+            cjs_stats.get("region_count"),
+            " 个",
+        ),
+        "stat_budget_total": _format_stat_amount(total_amount),
+        "stat_transaction_total": _format_stat_amount(total_amount),
+        "stat_announcement_count": _format_stat_count(
+            announcement_stats.get("announcement_count"),
+            " 条",
+        ),
+    }
+    _safe_console_log(
+        f"[mysql] card stats finished: keywords={keywords}, stats={stats}"
+    )
+    return stats
+
+
+def _query_mysql_region_distribution(raw_keywords, fallback_query=""):
+    keywords = _normalize_keywords(raw_keywords, fallback_query=fallback_query)
+    if not keywords:
+        return []
+
+    where_clause, params = _build_mysql_announcement_match_clause(
+        keywords,
+        alias="cjgg",
+    )
+
+    sql = f"""
+        SELECT
+            matched.CGRMC AS buyer_name,
+            COALESCE(cjs_by_wid.region_name, cjs_by_ggwid.region_name, '') AS region_name
+        FROM (
+            SELECT DISTINCT
+                cjgg.WID,
+                NULLIF(TRIM(cjgg.CGRMC), '') AS CGRMC
+            FROM zc_wlsjcj_cjgg cjgg
+            WHERE ({where_clause})
+              AND NULLIF(TRIM(cjgg.CGRMC), '') IS NOT NULL
+        ) matched
+        LEFT JOIN (
+            SELECT
+                WID AS link_wid,
+                MIN(NULLIF(TRIM(region), '')) AS region_name
+            FROM zc_wlsjcj_cjs
+            WHERE WID IS NOT NULL AND WID <> ''
+            GROUP BY WID
+        ) cjs_by_wid ON cjs_by_wid.link_wid = matched.WID
+        LEFT JOIN (
+            SELECT
+                GGWID AS link_wid,
+                MIN(NULLIF(TRIM(region), '')) AS region_name
+            FROM zc_wlsjcj_cjs
+            WHERE GGWID IS NOT NULL AND GGWID <> ''
+            GROUP BY GGWID
+        ) cjs_by_ggwid ON cjs_by_ggwid.link_wid = matched.WID
+    """
+
+    connection = pymysql.connect(**_get_mysql_connection_kwargs())
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(sql, params)
+            rows = list(cursor.fetchall())
+    finally:
+        connection.close()
+
+    province_buyers = defaultdict(set)
+    for row in rows:
+        province = _normalize_province_name(row.get("region_name"))
+        if not province or province == "\u5168\u56fd":
+            continue
+        buyer_name = str(row.get("buyer_name") or "").strip()
+        if not buyer_name:
+            continue
+        province_buyers[province].add(buyer_name)
+
+    distribution = sorted(
+        (
+            {"name": name, "value": len(buyers)}
+            for name, buyers in province_buyers.items()
+            if buyers
+        ),
+        key=lambda item: (-item["value"], item["name"]),
+    )
+    _safe_console_log(
+        f"[mysql] region distribution finished: keywords={keywords}, rows={len(distribution)}"
+    )
+    return distribution
+
+
+def _query_mysql_top_buyers(raw_keywords, fallback_query="", limit=10):
+    keywords = _normalize_keywords(raw_keywords, fallback_query=fallback_query)
+    if not keywords:
+        return []
+
+    try:
+        limit_value = max(int(limit or 10), 1)
+    except (TypeError, ValueError):
+        limit_value = 10
+
+    where_clause, params = _build_mysql_announcement_match_clause(
+        keywords,
+        alias="cjgg",
+    )
+
+    sql = f"""
+        SELECT
+            matched.WID,
+            matched.CGRMC AS buyer_name,
+            COALESCE(cjs_by_wid.region_name, cjs_by_ggwid.region_name, '') AS region_name,
+            COALESCE(cjs_by_wid.total_amount, cjs_by_ggwid.total_amount, 0) AS transaction_amount
+        FROM (
+            SELECT DISTINCT
+                cjgg.WID,
+                NULLIF(TRIM(cjgg.CGRMC), '') AS CGRMC
+            FROM zc_wlsjcj_cjgg cjgg
+            WHERE ({where_clause})
+              AND NULLIF(TRIM(cjgg.CGRMC), '') IS NOT NULL
+        ) matched
+        LEFT JOIN (
+            SELECT
+                WID AS link_wid,
+                COALESCE(
+                    SUM(
+                        CAST(
+                            NULLIF(
+                                REPLACE(REPLACE(TRIM(CJJE), ',', ''), '，', ''),
+                                ''
+                            ) AS DECIMAL(18, 2)
+                        )
+                    ),
+                    0
+                ) AS total_amount,
+                MIN(NULLIF(TRIM(region), '')) AS region_name
+            FROM zc_wlsjcj_cjs
+            WHERE WID IS NOT NULL AND WID <> ''
+            GROUP BY WID
+        ) cjs_by_wid ON cjs_by_wid.link_wid = matched.WID
+        LEFT JOIN (
+            SELECT
+                GGWID AS link_wid,
+                COALESCE(
+                    SUM(
+                        CAST(
+                            NULLIF(
+                                REPLACE(REPLACE(TRIM(CJJE), ',', ''), '，', ''),
+                                ''
+                            ) AS DECIMAL(18, 2)
+                        )
+                    ),
+                    0
+                ) AS total_amount,
+                MIN(NULLIF(TRIM(region), '')) AS region_name
+            FROM zc_wlsjcj_cjs
+            WHERE GGWID IS NOT NULL AND GGWID <> ''
+            GROUP BY GGWID
+        ) cjs_by_ggwid ON cjs_by_ggwid.link_wid = matched.WID
+    """
+
+    connection = pymysql.connect(**_get_mysql_connection_kwargs())
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(sql, params)
+            rows = list(cursor.fetchall())
+    finally:
+        connection.close()
+
+    buyer_totals = {}
+    for row in rows:
+        buyer_name = str(row.get("buyer_name") or "").strip()
+        if not buyer_name:
+            continue
+
+        transaction_amount = _to_decimal(row.get("transaction_amount")) or Decimal("0")
+        raw_region = str(row.get("region_name") or "").strip()
+        normalized_region = _normalize_province_name(raw_region) or raw_region
+
+        buyer_entry = buyer_totals.setdefault(
+            buyer_name,
+            {
+                "buyer_name": buyer_name[:255],
+                "project_count": 0,
+                "transaction_amount_value": Decimal("0"),
+                "regions": set(),
+            },
+        )
+        buyer_entry["project_count"] += 1
+        buyer_entry["transaction_amount_value"] += transaction_amount
+        if normalized_region:
+            buyer_entry["regions"].add(normalized_region)
+
+    top_buyers = sorted(
+        buyer_totals.values(),
+        key=lambda item: (
+            -item["project_count"],
+            -item["transaction_amount_value"],
+            item["buyer_name"],
+        ),
+    )[:limit_value]
+
+    normalized_rows = []
+    for item in top_buyers:
+        regions = item.pop("regions", set())
+        item["region"] = next(iter(regions)) if len(regions) == 1 else "-"
+        item["transaction_amount"] = f"{item['transaction_amount_value']:,.2f}"
+        normalized_rows.append(item)
+
+    _safe_console_log(
+        f"[mysql] top buyers finished: keywords={keywords}, rows={len(normalized_rows)}"
+    )
+    return normalized_rows
+
+
+def _map_mysql_announcement(row):
+    title = _first_present(
+        row,
+        "GGBT",
+        "announcement_title",
+        "TITLE",
+        "title",
+        "项目名称",
+        "PROJECT_NAME",
+        "project_name",
+        "标的信息",
+        default="未命名公告",
+    )
+    buyer = _first_present(
+        row,
+        "CGRMC",
+        "采购人名称",
+        "supplier_name",
+        "BUYER",
+        "buyer",
+        "PROCUREMENT_UNIT",
+        "procurement_unit",
+        default="",
+    )
+    target_url = _first_present(
+        row,
+        "GGURL",
+        "公告链接",
+        "url",
+        "URL",
+        "detail_url",
+        "LINK",
+        default="",
+    )
+    budget_value = _first_present(
+        row,
+        "budget_amount",
+        "预算金额",
+        "AMOUNT",
+        "price",
+        "BUDGET",
+        "CJJE",
+        "成交金额",
+        default=None,
+    )
+
+    return {
+        "title": str(title)[:255],
+        "buyer": str(buyer)[:255],
+        "region": _norm_region(
+            _first_present(
+                row,
+                "CGRDZ",
+                "region",
+                "REGION",
+                "PROVINCE",
+                "province",
+                "CITY",
+                "city",
+                "地区",
+                "省份",
+                default="",
+            )
+        ),
+        "publish_date": _parse_date(
+            _first_present(
+                row,
+                "GGFBRQ",
+                "公告发布日期",
+                "announcement_time",
+                "publish_date",
+                "PUBLISH_DATE",
+                "publish_time",
+                "create_time",
+            )
+        ),
+        "budget_amount": _to_decimal(budget_value),
+        "transaction_amount": _to_decimal(
+            _first_present(
+                row,
+                "transaction_amount",
+                "deal_amount",
+                "CJJE",
+                "成交金额",
+                default=None,
+            )
+        ),
+        "url": str(target_url)[:200] if target_url else "",
+        "project_number": str(
+            _first_present(row, "XMBH", "project_number", default="")
+        )[:100]
+        or None,
+    }
+
+
+def _build_report_body(content, created_count):
+    content_text = (content or "").strip()
+    if created_count:
+        prefix = f"本次分析已纳入 {created_count} 条采购公告数据。"
+        if content_text:
+            return f"{prefix}\n\n{content_text}"
+        return f"{prefix} 请在侧栏查看“采购公告”分类明细。"
+    if content_text:
+        return content_text
+    return (
+        "本次分析未检索到匹配的采购公告；请确认扩充关键词有效，且 MySQL 公告表 "
+        "zc_wlsjcj_cjgg 中存在与这些关键词模糊匹配的数据。"
+    )
+
+
 def ai_analysis(request):
-    """AI 一键分析中间页面"""
-    keyword = request.GET.get('search', '').strip()
+    keyword = (request.GET.get("query") or request.GET.get("search") or "").strip()
     if not keyword:
-        return render(request, 'reports/ai_analysis.html', {'keyword': '未指定关键词'})
-    return render(request, 'reports/ai_analysis.html', {'keyword': keyword})
+        keyword = "未指定关键词"
+    return render(request, "reports/ai_analysis.html", {"keyword": keyword})
+
 
 @csrf_exempt
 @require_POST
 def update_report_content(request, report_id):
     try:
         data = json.loads(request.body)
-        field = data.get('field')
-        content = data.get('content')
+    except json.JSONDecodeError:
+        return JsonResponse({"success": False, "error": "Invalid JSON"}, status=400)
 
-        allowed_fields = ['market_supply_analysis', 'market_trend_analysis', 'ai_summary_analysis']
-        if field not in allowed_fields:
-            return JsonResponse({'success': False, 'error': 'Invalid field'}, status=400)
+    field = data.get("field")
+    content = data.get("content", "")
+    allowed_fields = {
+        "market_supply_analysis",
+        "market_trend_analysis",
+        "ai_summary_analysis",
+    }
+    if field not in allowed_fields:
+        return JsonResponse({"success": False, "error": "Invalid field"}, status=400)
 
+    try:
         report = ReportPage.objects.get(id=report_id)
-        setattr(report, field, content)
-        report.save_revision().publish()
-        
-        return JsonResponse({'success': True, 'message': 'Saved successfully'})
-        
     except ReportPage.DoesNotExist:
-        return JsonResponse({'success': False, 'error': 'Report not found'}, status=404)
-    except Exception as e:
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+        return JsonResponse({"success": False, "error": "Report not found"}, status=404)
+
+    setattr(report, field, content)
+    report.save_revision().publish()
+    return JsonResponse({"success": True, "message": "Saved successfully"})
+
 
 def filter_historical_projects(request, report_id):
     report = get_object_or_404(ReportPage, id=report_id)
     projects = HistoricalProject.objects.filter(page=report)
 
-    # 1. Search Query
-    q = request.GET.get('q', '').strip()
+    q = request.GET.get("q", "").strip()
     if q:
-        projects = projects.filter(
-            Q(project_name__icontains=q) |
-            Q(procurement_unit__icontains=q) |
-            Q(supplier_name__icontains=q)
+        projects = _keyword_filter_or_show_all(
+            projects,
+            q,
+            Q(project_name__icontains=q)
+            | Q(procurement_unit__icontains=q)
+            | Q(supplier_name__icontains=q),
         )
 
-    # 2. Time Filter
-    time_filter = request.GET.get('time', 'all')
-    now = timezone.now().date()
-    if time_filter == '1m':
-        start_date = now - timedelta(days=30)
-        projects = projects.filter(procurement_time__gte=start_date)
-    elif time_filter == '3m':
-        start_date = now - timedelta(days=90)
-        projects = projects.filter(procurement_time__gte=start_date)
-    elif time_filter == '6m':
-        start_date = now - timedelta(days=180)
-        projects = projects.filter(procurement_time__gte=start_date)
-    elif time_filter == '1y':
-        start_date = now - timedelta(days=365)
-        projects = projects.filter(procurement_time__gte=start_date)
-    elif time_filter == '3y':
-        start_date = now - timedelta(days=365*3)
-        projects = projects.filter(procurement_time__gte=start_date)
+    projects = _apply_time_filter(projects, "procurement_time", request.GET.get("time"))
+    projects = _apply_amount_filter(
+        projects, "transaction_amount", request.GET.get("amount")
+    )
+    projects = projects.order_by("-procurement_time", "-id")
 
-    # 3. Amount Filter (Transaction Amount)
-    amount_filter = request.GET.get('amount', 'all')
-    if amount_filter == '0-10':
-        projects = projects.filter(transaction_amount__lt=10)
-    elif amount_filter == '10-50':
-        projects = projects.filter(transaction_amount__gte=10, transaction_amount__lt=50)
-    elif amount_filter == '50-100':
-        projects = projects.filter(transaction_amount__gte=50, transaction_amount__lt=100)
-    elif amount_filter == '100-500':
-        projects = projects.filter(transaction_amount__gte=100, transaction_amount__lt=500)
-    elif amount_filter == '500-1000':
-        projects = projects.filter(transaction_amount__gte=500, transaction_amount__lt=1000)
-    elif amount_filter == '1000-5000':
-        projects = projects.filter(transaction_amount__gte=1000, transaction_amount__lt=5000)
-    elif amount_filter == '5000-inf':
-        projects = projects.filter(transaction_amount__gte=5000)
+    return render(
+        request,
+        "reports/partials/project_table.html",
+        {"projects": projects},
+    )
 
-    # Default ordering if needed, maybe by time desc
-    projects = projects.order_by('-procurement_time')
-
-    return render(request, 'reports/partials/project_table.html', {
-        'projects': projects
-    })
 
 def filter_ongoing_projects(request, report_id):
     report = get_object_or_404(ReportPage, id=report_id)
     projects = OngoingProject.objects.filter(page=report)
 
-    # 1. Search Query
-    q = request.GET.get('q', '').strip()
+    q = request.GET.get("q", "").strip()
     if q:
-        projects = projects.filter(
-            Q(project_name__icontains=q) |
-            Q(procurement_unit__icontains=q)
+        projects = _keyword_filter_or_show_all(
+            projects,
+            q,
+            Q(project_name__icontains=q) | Q(procurement_unit__icontains=q),
         )
 
-    # 2. Time Filter (bid_opening_time)
-    time_filter = request.GET.get('time', 'all')
-    now = timezone.now().date()
-    # 1m, 3m, 6m, 1y, 3y
-    if time_filter == '1m':
-        limit = now - timedelta(days=30)
-        projects = projects.filter(bid_opening_time__gte=limit)
-    elif time_filter == '3m':
-        limit = now - timedelta(days=90)
-        projects = projects.filter(bid_opening_time__gte=limit)
-    elif time_filter == '6m':
-        limit = now - timedelta(days=180)
-        projects = projects.filter(bid_opening_time__gte=limit)
-    elif time_filter == '1y':
-        limit = now - timedelta(days=365)
-        projects = projects.filter(bid_opening_time__gte=limit)
-    elif time_filter == '3y':
-        limit = now - timedelta(days=365*3)
-        projects = projects.filter(bid_opening_time__gte=limit)
+    projects = _apply_time_filter(projects, "bid_opening_time", request.GET.get("time"))
+    projects = _apply_amount_filter(projects, "budget_amount", request.GET.get("amount"))
+    projects = projects.order_by("-bid_opening_time", "-id")
 
-    # 3. Amount Filter (budget_amount)
-    amount_filter = request.GET.get('amount', 'all')
-    if amount_filter != 'all':
-        try:
-            if amount_filter == '5000-inf':
-                projects = projects.filter(budget_amount__gte=5000)
-            else:
-                min_val, max_val = map(float, amount_filter.split('-'))
-                projects = projects.filter(budget_amount__gte=min_val, budget_amount__lte=max_val)
-        except ValueError:
-            pass
-            
-    context = {
-        'projects': projects,
-    }
-    return render(request, 'reports/partials/ongoing_project_table.html', context)
+    return render(
+        request,
+        "reports/partials/ongoing_project_table.html",
+        {"projects": projects},
+    )
 
 
 def filter_purchase_intentions(request, report_id):
     report = get_object_or_404(ReportPage, id=report_id)
     intentions = report.purchase_intentions.all()
 
-    # 1. Search Query
-    q = request.GET.get('q', '').strip()
+    q = request.GET.get("q", "").strip()
     if q:
-        intentions = intentions.filter(
-            Q(project_name__icontains=q) |
-            Q(procurement_unit__icontains=q) |
-            Q(content__icontains=q)
+        intentions = _keyword_filter_or_show_all(
+            intentions,
+            q,
+            Q(project_name__icontains=q)
+            | Q(procurement_unit__icontains=q)
+            | Q(content__icontains=q),
         )
 
-    # 2. Amount Filter (Budget)
-    # 2. Amount Filter (Budget)
-    amount_filter = request.GET.get('amount', 'all')
-    if amount_filter != 'all':
-        try:
-            if amount_filter == '5000-inf':
-                intentions = intentions.filter(budget_amount__gte=5000)
-            else:
-                # Expect format 'min-max' e.g. '0-10', '10-50'
-                min_val, max_val = map(float, amount_filter.split('-'))
-                intentions = intentions.filter(budget_amount__gte=min_val, budget_amount__lt=max_val)
-        except ValueError:
-            pass
+    intentions = _apply_amount_filter(intentions, "budget_amount", request.GET.get("amount"))
 
-    # 3. Region Filter (Province)
-    region_filter = request.GET.get('region', 'All')
-    if region_filter and region_filter not in ['All', '全国']:
-        # Map frontend "region" values to model "province" values if needed
-        # Assuming frontend passes full province names like "四川"
-        intentions = intentions.filter(province__icontains=region_filter)
+    region = (request.GET.get("region") or "All").strip()
+    if region and region not in {"All", "全国"}:
+        intentions = intentions.filter(province__icontains=region)
 
-    context = {
-        'intentions': intentions,
-    }
-    return render(request, 'reports/partials/intention_list.html', context)
+    intentions = intentions.order_by("-publish_time", "-id")
+    return render(
+        request,
+        "reports/partials/intention_list.html",
+        {"intentions": intentions},
+    )
 
 
 def filter_announcements(request, report_id):
     report = get_object_or_404(ReportPage, id=report_id)
     announcements = report.report_announcements.all()
 
-    # 1. Search Query
-    q = request.GET.get('q', '').strip()
+    q = request.GET.get("q", "").strip()
     if q:
-        announcements = announcements.filter(
-            Q(title__icontains=q) |
-            Q(buyer__icontains=q)
+        announcements = _keyword_filter_or_show_all(
+            announcements,
+            q,
+            Q(title__icontains=q) | Q(buyer__icontains=q),
         )
 
-    # 2. Time Filter
-    time_filter = request.GET.get('time', 'all')
-    now = timezone.now().date()
-    if time_filter == '1m':
-        limit = now - timedelta(days=30)
-        announcements = announcements.filter(publish_date__gte=limit)
-    elif time_filter == '3m':
-        limit = now - timedelta(days=90)
-        announcements = announcements.filter(publish_date__gte=limit)
-    elif time_filter == '6m':
-        limit = now - timedelta(days=180)
-        announcements = announcements.filter(publish_date__gte=limit)
-    elif time_filter == '1y':
-        limit = now - timedelta(days=365)
-        announcements = announcements.filter(publish_date__gte=limit)
-    elif time_filter == '3y':
-        limit = now - timedelta(days=365*3)
-        announcements = announcements.filter(publish_date__gte=limit)
+    announcements = _apply_time_filter(
+        announcements, "publish_date", request.GET.get("time")
+    )
+    announcements = _apply_amount_filter(
+        announcements, "budget_amount", request.GET.get("amount")
+    )
+    announcements = announcements.order_by("-publish_date", "-id")
+    announcements = _paginate_queryset(announcements, request.GET.get("page"), per_page=15)
 
-    # 3. Amount Filter (Budget or Transaction - checking budget first, fallback to transaction?)
-    # Requirement says "Project Amount". Let's filter on budget_amount.
-    amount_filter = request.GET.get('amount', 'all')
-    if amount_filter != 'all':
-        try:
-            if amount_filter == '5000-inf':
-                announcements = announcements.filter(budget_amount__gte=5000)
-            else:
-                min_val, max_val = map(float, amount_filter.split('-'))
-                announcements = announcements.filter(budget_amount__gte=min_val, budget_amount__lt=max_val)
-        except ValueError:
-            pass
-
-    # 4. Region Filter
-    region_filter = request.GET.get('region', 'All')
-    if region_filter and region_filter not in ['All', '全国']:
-        announcements = announcements.filter(region__icontains=region_filter)
-
-    # 5. Type Filter
-    type_filter = request.GET.get('type', 'all')
-    if type_filter and type_filter != 'all':
-         # Map frontend text to choice keys if needed, or use keys directly.
-         # Assuming frontend passes keys like 'bidding', 'result', etc.
-         announcements = announcements.filter(announcement_type=type_filter)
-
-    context = {
-        'announcements': announcements,
-    }
-    return render(request, 'reports/partials/announcement_table.html', context)
+    return render(
+        request,
+        "reports/partials/announcement_table.html",
+        {"announcements": announcements},
+    )
 
 
 def filter_contracts(request, report_id):
     report = get_object_or_404(ReportPage, id=report_id)
     contracts = report.report_contracts.all()
 
-    # 1. Search Query
-    q = request.GET.get('q', '').strip()
+    q = request.GET.get("q", "").strip()
     if q:
-        contracts = contracts.filter(
-            Q(title__icontains=q) |
-            Q(buyer__icontains=q)
+        contracts = _keyword_filter_or_show_all(
+            contracts,
+            q,
+            Q(title__icontains=q) | Q(buyer__icontains=q),
         )
 
-    # 2. Time Filter
-    time_filter = request.GET.get('time', 'all')
-    now = timezone.now().date()
-    if time_filter == '1m':
-        limit = now - timedelta(days=30)
-        contracts = contracts.filter(publish_date__gte=limit)
-    elif time_filter == '3m':
-        limit = now - timedelta(days=90)
-        contracts = contracts.filter(publish_date__gte=limit)
-    elif time_filter == '6m':
-        limit = now - timedelta(days=180)
-        contracts = contracts.filter(publish_date__gte=limit)
-    elif time_filter == '1y':
-        limit = now - timedelta(days=365)
-        contracts = contracts.filter(publish_date__gte=limit)
-    elif time_filter == '3y':
-        limit = now - timedelta(days=365*3)
-        contracts = contracts.filter(publish_date__gte=limit)
+    contracts = _apply_time_filter(contracts, "publish_date", request.GET.get("time"))
+    contracts = _apply_amount_filter(
+        contracts, "budget_amount", request.GET.get("amount")
+    )
 
-    # 3. Amount Filter (Budget Amount)
-    amount_filter = request.GET.get('amount', 'all')
-    if amount_filter != 'all':
-        try:
-            if amount_filter == '5000-inf':
-                contracts = contracts.filter(budget_amount__gte=5000)
-            else:
-                min_val, max_val = map(float, amount_filter.split('-'))
-                contracts = contracts.filter(budget_amount__gte=min_val, budget_amount__lt=max_val)
-        except ValueError:
-            pass
+    region = (request.GET.get("region") or "All").strip()
+    if region and region not in {"All", "全国"}:
+        contracts = contracts.filter(region__icontains=region)
 
-    # 4. Region Filter
-    region_filter = request.GET.get('region', 'All')
-    if region_filter and region_filter not in ['All', '全国']:
-        contracts = contracts.filter(region__icontains=region_filter)
-
-    context = {
-        'contracts': contracts,
-    }
-    return render(request, 'reports/partials/contract_table.html', context)
+    contracts = contracts.order_by("-publish_date", "-id")
+    return render(
+        request,
+        "reports/partials/contract_table.html",
+        {"contracts": contracts},
+    )
 
 
 def filter_documents(request, report_id):
     report = get_object_or_404(ReportPage, id=report_id)
     documents = report.report_documents.all()
 
-    # 1. Search Query (Title)
-    q = request.GET.get('q', '').strip()
+    q = request.GET.get("q", "").strip()
     if q:
-        documents = documents.filter(title__icontains=q)
-        
-    # 2. Type Filter (procurement, contract, acceptance)
-    doc_type = request.GET.get('type', 'all')
-    if doc_type and doc_type != 'all' and doc_type != 'All':
-         documents = documents.filter(doc_type=doc_type)
+        documents = _keyword_filter_or_show_all(
+            documents,
+            q,
+            Q(title__icontains=q) | Q(source__icontains=q),
+        )
 
-    # 3. File Format Filter (auto-detect from file extension)
-    file_format = request.GET.get('format', 'all').strip().lower()
-    if file_format and file_format != 'all':
-        documents = documents.filter(file__endswith='.' + file_format)
+    doc_type = (request.GET.get("type") or "all").strip()
+    if doc_type not in {"all", "All"}:
+        documents = documents.filter(doc_type=doc_type)
 
-    # Order by upload time desc
-    documents = documents.order_by('-upload_time')
+    file_format = (request.GET.get("format") or "all").strip().lower()
+    if file_format and file_format != "all":
+        documents = documents.filter(file__iendswith=f".{file_format}")
 
-    context = {
-        'documents': documents,
-    }
-    return render(request, 'reports/partials/document_table.html', context)
+    documents = documents.order_by("-upload_time", "-id")
+    return render(
+        request,
+        "reports/partials/document_table.html",
+        {"documents": documents},
+    )
 
 
 def chat_home(request):
-    """
-    渲染全新的纯对话入口页面 (chat_home.html)
-    """
-    return render(request, 'reports/chat_home.html')
-
-
-@csrf_exempt
-@require_POST
-def expand_keywords(request):
-    """
-    Step 2: 接收用户原始提问，调用大模型提取并扩充关键词
-    被 ai_analysis.html 页面调用
-    """
-    try:
-        data = json.loads(request.body)
-        original_query = data.get('query', '')
-
-        # TODO: 在这里调用你的真实大语言模型 (LLM) 进行 NER 或关键词提取
-        # 例如：llm_result = llm.invoke(f"提取这些关键词: {original_query}")
-
-        # 这里为了让你立刻看到前端效果，暂时返回写死的模拟数据：
-        mock_keywords = ["市场趋势", "历史成交金额", "潜在供应商名录", "合规性与风险"]
-
-        return JsonResponse({'success': True, 'keywords': mock_keywords})
-
-    except Exception as e:
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
-
-
-@csrf_exempt
-@require_POST
-def run_agent(request):
-    """
-    Step 3: 接收组合后的提示词，驱动多智能体(RAG)系统生成最终的 Wagtail 报告
-    被 ai_analysis.html 页面调用
-    """
-    try:
-        data = json.loads(request.body)
-        original_query = data.get('original_query', '')
-        expanded_keywords = data.get('expanded_keywords', [])
-        enriched_query = data.get('enriched_query', '')
-
-        # TODO: 1. 将 enriched_query 喂给你的多智能体系统 (LangGraph)
-        # TODO: 2. 智能体跑完后，用 Wagtail 的 API 在数据库里新建一条 ReportPage 数据
-        # report = ReportPage(title=..., procurement_name=...)
-        # parent_page.add_child(instance=report)
-        # report.save_revision().publish()
-
-        # 为了演示跳转，这里假设你的多智能体成功跑完，并在数据库里生成了一篇 ID 为 1 的报告
-        # (你需要替换为你系统里真实存在的报告 ID)
-        new_report_id = 1
-
-        return JsonResponse({'success': True, 'report_id': new_report_id})
-
-    except Exception as e:
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
-
-
-# reports/views.py 补充代码
-from django.core.files.storage import FileSystemStorage
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
-import os
+    return render(request, "reports/chat_home.html")
 
 
 @csrf_exempt
 @require_POST
 def upload_temp_file(request):
-    """
-    处理 Chat 界面上传的 RAG 参考文件
-    """
-    if request.FILES.get('file'):
-        uploaded_file = request.FILES['file']
-        # 将文件暂存到 media/temp_rag_docs/ 目录下
-        fs = FileSystemStorage(location=os.path.join(settings.MEDIA_ROOT, 'temp_rag_docs'))
-        filename = fs.save(uploaded_file.name, uploaded_file)
+    uploaded_file = request.FILES.get("file")
+    if not uploaded_file:
+        return JsonResponse({"success": False, "error": "未接收到文件"}, status=400)
 
-        # 返回文件名作为 file_id
-        return JsonResponse({'success': True, 'file_id': filename})
-    return JsonResponse({'success': False, 'error': '未接收到文件'})
+    storage = FileSystemStorage(
+        location=os.path.join(settings.MEDIA_ROOT, "temp_rag_docs")
+    )
+    filename = storage.save(uploaded_file.name, uploaded_file)
+    return JsonResponse({"success": True, "file_id": filename})
+
+
+@require_POST
+def create_report_from_ai(request):
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"status": "error", "message": "Invalid JSON"}, status=400)
+
+    title = data.get("title", "AI 需求调查报告")
+    content = data.get("content", "")
+    thread_id = (data.get("thread_id") or "").strip()
+    expanded_keywords = data.get("expanded_keywords", [])
+    if isinstance(expanded_keywords, str):
+        try:
+            expanded_keywords = json.loads(expanded_keywords)
+        except json.JSONDecodeError:
+            expanded_keywords = [expanded_keywords]
+    if not isinstance(expanded_keywords, list):
+        expanded_keywords = []
+
+    if not thread_id:
+        return JsonResponse({"status": "error", "message": "缺少 thread_id"}, status=400)
+
+    parent_page = ReportIndexPage.objects.first()
+    if not parent_page:
+        return JsonResponse(
+            {"status": "error", "message": "未找到报告目录父节点"},
+            status=500,
+        )
+
+    keywords = _normalize_keywords(expanded_keywords, fallback_query=title)
+    new_report = ReportPage(
+        title=f"{title} 需求调查报告",
+        slug=_build_unique_slug(parent_page, thread_id),
+        content=content,
+        ai_summary_analysis=content,
+        procurement_name=title,
+        analysis_keywords="、".join(keywords),
+        owner=request.user if getattr(request, "user", None) and request.user.is_authenticated else None,
+    )
+    try:
+        parent_page.add_child(instance=new_report)
+        new_report.save_revision().publish()
+    except OperationalError as exc:
+        response = _report_page_schema_error_response(exc)
+        if response is not None:
+            return response
+        raise
+
+    try:
+        mysql_rows = _query_mysql_announcements_by_keywords(
+            keywords,
+            fallback_query=title,
+        )
+        card_stats = _query_mysql_report_card_stats(
+            keywords,
+            fallback_query=title,
+        )
+    except Exception as exc:
+        _safe_console_log(f"[create_report_from_ai] direct mysql query failed: {exc}")
+        mysql_rows = []
+        card_stats = {}
+
+    _safe_console_log(
+        f"[create_report_from_ai] start processing {len(mysql_rows)} rows, keywords={keywords}"
+    )
+
+    created_count = 0
+    failed_count = 0
+    for index, row in enumerate(mysql_rows, start=1):
+        try:
+            mapped = _map_mysql_announcement(row)
+            new_report.report_announcements.create(**mapped)
+            created_count += 1
+            _safe_console_log(
+                f"[create_report_from_ai] processing row {index}/{len(mysql_rows)} title={mapped['title'][:50]}"
+            )
+        except Exception as exc:
+            failed_count += 1
+            _safe_console_log(
+                f"[create_report_from_ai] row {index} write failed: {exc}; row_keys={list(row.keys())}"
+            )
+
+    new_report.serial_number = thread_id[:50] or f"RPT-{new_report.id}"
+    for field_name, field_value in card_stats.items():
+        setattr(new_report, field_name, field_value)
+    report_body = _build_report_body(content, created_count)
+    new_report.market_supply_analysis = ""
+    new_report.market_trend_analysis = report_body[:20000]
+    try:
+        new_report.save_revision().publish()
+    except OperationalError as exc:
+        response = _report_page_schema_error_response(exc)
+        if response is not None:
+            return response
+        raise
+
+    _safe_console_log(
+        f"[create_report_from_ai] done: created={created_count}, failed={failed_count}, total={len(mysql_rows)}"
+    )
+    _safe_console_log(f"[create_report_from_ai] report_url={new_report.url}")
+
+    return JsonResponse(
+        {
+            "status": "success",
+            "redirect_url": new_report.url,
+            "created_count": created_count,
+            "failed_count": failed_count,
+        }
+    )

@@ -157,7 +157,7 @@ class Command(BaseCommand):
             {
                 'title': '2026年高校信息化设备需求分析报告',
                 'procurement_name': '计算机/服务器/网络设备/多媒体教学设备/实验室仪器/图书馆自动化系统/校园一卡通系统/安防监控设备',
-                'analysis_type': '一键分析',
+                'analysis_type': '分析',
                 'category': 'ai',
                 'summary': '<p>本报告对2026年度高校信息化设备采购需求进行了全面分析。</p>',
                 'content': '<p><strong>主要发现：</strong></p><ul><li>计算机设备需求量最大，占比45%</li><li>网络设备升级需求显著</li><li>多媒体教学设备更新换代加速</li></ul>',
@@ -165,7 +165,7 @@ class Command(BaseCommand):
             {
                 'title': '医疗设备采购市场调研报告',
                 'procurement_name': 'CT机/核磁共振/超声设备/X光机/手术器械/监护仪/呼吸机/血液分析仪',
-                'analysis_type': '高级分析',
+                'analysis_type': '分析',
                 'category': 'bigdata',
                 'summary': '<p>针对医疗设备采购市场进行深度调研分析。</p>',
                 'content': '<p><strong>市场趋势：</strong></p><ul><li>高端医疗设备国产化率提升</li><li>智能化、数字化成为主流</li><li>采购预算整体增长</li></ul>',
@@ -173,7 +173,7 @@ class Command(BaseCommand):
             {
                 'title': '政府办公设备需求调查',
                 'procurement_name': '办公桌椅/文件柜/保险柜/会议桌/投影仪/打印机/复印机/碎纸机/空调/饮水机',
-                'analysis_type': '一键分析',
+                'analysis_type': '分析',
                 'category': 'analysis',
                 'summary': '<p>对政府机关办公设备采购需求进行统计分析。</p>',
                 'content': '<p><strong>采购特点：</strong></p><ul><li>注重环保节能</li><li>倾向国产品牌</li><li>批量采购为主</li></ul>',

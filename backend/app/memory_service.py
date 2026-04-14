@@ -97,7 +97,7 @@ async def extract_memories_from_conversation(
         endpoint = f"{settings.deepseek_base_url.rstrip('/')}/chat/completions"
 
         payload = {
-            "model": "deepseek-r1",
+            "model": "deepseek-v3.2",
             "messages": [{"role": "user", "content": extraction_prompt}],
             "temperature": 0.3,
             "max_tokens": 1000,

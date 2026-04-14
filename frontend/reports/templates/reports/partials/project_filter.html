@@ -51,7 +51,7 @@
         {% endif %}
 
         <!-- Region Filter -->
-        {% if type == 'intentions' or type == 'announcements' or type == 'contracts' %}
+        {% if type == 'intentions' or type == 'contracts' %}
         <div class="criteria-row filter-region"
             style="display: flex; align-items: baseline; margin-bottom: 15px; line-height: 28px;">
             <span class="criteria-label"
@@ -92,25 +92,6 @@
                 <span class="c-opt" data-value="香港">香港</span>
                 <span class="c-opt" data-value="澳门">澳门</span>
                 <span class="c-opt" data-value="台湾">台湾</span>
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Announcement Type Filter -->
-        {% if type == 'announcements' %}
-        <div class="criteria-row filter-type"
-            style="display: flex; align-items: baseline; margin-bottom: 15px; line-height: 28px;">
-            <span class="criteria-label"
-                style="color: #888; margin-right: 20px; width: 70px; font-weight: 500;">信息类型:</span>
-            <div class="criteria-options" style="flex: 1; display: flex; flex-wrap: wrap; gap: 8px;">
-                <span class="c-opt active" data-value="all">不限类型</span>
-                <span class="c-opt" data-value="bidding">招标公告</span>
-                <span class="c-opt" data-value="change">变更公告</span>
-                <span class="c-opt" data-value="termination">终止/废标公告</span>
-                <span class="c-opt" data-value="contract">合同公示</span>
-                <span class="c-opt" data-value="acceptance">验收公示</span>
-                <span class="c-opt" data-value="result">结果公告</span>
-                <span class="c-opt" data-value="other">其他公告</span>
             </div>
         </div>
         {% endif %}

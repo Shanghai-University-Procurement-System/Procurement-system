@@ -1,4 +1,4 @@
-from django.db import models
+﻿from django.db import models
 from django import forms
 from wagtail.models import Page, Orderable
 from wagtail.fields import RichTextField
@@ -7,11 +7,14 @@ from wagtail.search import index
 from django.core.paginator import Paginator
 from modelcluster.fields import ParentalKey
 from django.utils import timezone
+from collections import defaultdict
+from decimal import Decimal, InvalidOperation
 import os
 import datetime
+import re
 
 
-# 报告分类选择
+# 报告分类选项
 REPORT_CATEGORY_CHOICES = [
     ('default', '默认'),
     ('analysis', '调查分析'),
@@ -23,53 +26,91 @@ REPORT_CATEGORY_CHOICES = [
     ('life', '生活'),
 ]
 
+PROVINCE_CHOICES = [
+    ('全国', '全国'),
+    ('北京', '北京'),
+    ('天津', '天津'),
+    ('河北', '河北'),
+    ('山西', '山西'),
+    ('内蒙古', '内蒙古'),
+    ('辽宁', '辽宁'),
+    ('吉林', '吉林'),
+    ('黑龙江', '黑龙江'),
+    ('上海', '上海'),
+    ('江苏', '江苏'),
+    ('浙江', '浙江'),
+    ('安徽', '安徽'),
+    ('福建', '福建'),
+    ('江西', '江西'),
+    ('山东', '山东'),
+    ('河南', '河南'),
+    ('湖北', '湖北'),
+    ('湖南', '湖南'),
+    ('广东', '广东'),
+    ('广西', '广西'),
+    ('海南', '海南'),
+    ('重庆', '重庆'),
+    ('四川', '四川'),
+    ('贵州', '贵州'),
+    ('云南', '云南'),
+    ('西藏', '西藏'),
+    ('陕西', '陕西'),
+    ('甘肃', '甘肃'),
+    ('青海', '青海'),
+    ('宁夏', '宁夏'),
+    ('新疆', '新疆'),
+    ('香港', '香港'),
+    ('澳门', '澳门'),
+    ('台湾', '台湾'),
+]
+
 
 class ReportIndexPage(Page):
-    """需求调查报告列表页"""
-    intro = RichTextField(blank=True, verbose_name='介绍')
+    """闇€姹傝皟鏌ユ姤鍛婂垪琛ㄩ〉"""
+    intro = RichTextField(blank=True, verbose_name='浠嬬粛')
 
     content_panels = Page.content_panels + [
         FieldPanel('intro'),
     ]
 
     class Meta:
-        verbose_name = '需求调查报告列表页'
+        verbose_name = '闇€姹傝皟鏌ユ姤鍛婂垪琛ㄩ〉'
 
     def get_context(self, request):
         context = super().get_context(request)
         
-        # 获取所有报告
+        # 鑾峰彇鎵€鏈夋姤鍛?
         reports = ReportPage.objects.live().child_of(self)
 
         # Filter by owner (User-specific visibility)
         if request.user.is_authenticated:
             if request.user.is_superuser:
-                pass  # 超级管理员看到所有报告
+                pass  # 瓒呯骇绠＄悊鍛樼湅鍒版墍鏈夋姤鍛?
             else:
-                # 普通用户看到：自己的报告 + 公共报告
+                # 鏅€氱敤鎴风湅鍒帮細鑷繁鐨勬姤鍛?+ 鍏叡鎶ュ憡
                 from django.db.models import Q
                 reports = reports.filter(
                     Q(owner=request.user) | Q(is_public=True)
                 )
         else:
-            # 未登录用户看不到报告
+            # 鏈櫥褰曠敤鎴风湅涓嶅埌鎶ュ憡
             reports = ReportPage.objects.none()
         
-        # 分类筛选
+        # 鍒嗙被绛涢€?
         category = request.GET.get('category')
         if category and category != 'default':
             reports = reports.filter(category=category)
         
-        # 搜索
+        # 鎼滅储
         search_query = request.GET.get('search')
         if search_query:
             reports = reports.search(search_query)
         else:
-            # 仅在非搜索模式下排序（搜索结果按相关性排列）
+            # 浠呭湪闈炴悳绱㈡ā寮忎笅鎺掑簭锛堟悳绱㈢粨鏋滄寜鐩稿叧鎬ф帓鍒楋級
             reports = reports.order_by('-analysis_time')
         
-        # 分页
-        paginator = Paginator(reports, 20)  # 每页20条
+        # 鍒嗛〉
+        paginator = Paginator(reports, 20)  # 姣忛〉20鏉?
         page_number = request.GET.get('page', 1)
         page_obj = paginator.get_page(page_number)
         
@@ -84,14 +125,14 @@ class ReportIndexPage(Page):
 
 class HistoricalProject(Orderable):
     page = ParentalKey('ReportPage', on_delete=models.CASCADE, related_name='historical_projects')
-    project_name = models.CharField(max_length=255, verbose_name='项目名称', blank=True, null=True)
-    procurement_method = models.CharField(max_length=100, verbose_name='采购方式', blank=True, null=True)
-    procurement_time = models.DateField(verbose_name='采购时间', blank=True, null=True)
-    procurement_unit = models.CharField(max_length=255, verbose_name='采购单位', blank=True, null=True)
-    budget_amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name='预算(万元)', blank=True, null=True)
-    supplier_name = models.CharField(max_length=255, verbose_name='供应商名称', blank=True, null=True)
-    transaction_amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name='成交(万元)', blank=True, null=True)
-    detail_link = models.URLField(verbose_name='详情链接', blank=True, null=True)
+    project_name = models.CharField(max_length=255, verbose_name='椤圭洰鍚嶇О', blank=True, null=True)
+    procurement_method = models.CharField(max_length=100, verbose_name='閲囪喘鏂瑰紡', blank=True, null=True)
+    procurement_time = models.DateField(verbose_name='閲囪喘鏃堕棿', blank=True, null=True)
+    procurement_unit = models.CharField(max_length=255, verbose_name='閲囪喘鍗曚綅', blank=True, null=True)
+    budget_amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name='棰勭畻(涓囧厓)', blank=True, null=True)
+
+    transaction_amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name='鎴愪氦(涓囧厓)', blank=True, null=True)
+    detail_link = models.URLField(verbose_name='璇︽儏閾炬帴', blank=True, null=True)
 
     panels = [
         FieldPanel('project_name'),
@@ -99,20 +140,6 @@ class HistoricalProject(Orderable):
         FieldPanel('procurement_time'),
         FieldPanel('procurement_unit'),
         FieldPanel('budget_amount'),
-        FieldPanel('supplier_name'),
-        FieldPanel('transaction_amount'),
-        FieldPanel('supplier_name'),
-        FieldPanel('transaction_amount'),
-        FieldPanel('detail_link'),
-    ]
-
-    panels = [
-        FieldPanel('project_name'),
-        FieldPanel('procurement_method'),
-        FieldPanel('procurement_time'),
-        FieldPanel('procurement_unit'),
-        FieldPanel('budget_amount'),
-        FieldPanel('supplier_name'),
         FieldPanel('transaction_amount'),
         FieldPanel('detail_link'),
     ]
@@ -120,40 +147,27 @@ class HistoricalProject(Orderable):
 
 class ReportAnnouncement(Orderable):
     page = ParentalKey('ReportPage', on_delete=models.CASCADE, related_name='report_announcements')
-    title = models.CharField(max_length=255, verbose_name='公告标题')
-    url = models.URLField(verbose_name='公告链接', blank=True, null=True)
-    publish_date = models.DateField(verbose_name='发布时间', blank=True, null=True)
+    title = models.CharField(max_length=255, verbose_name='鍏憡鏍囬')
+    url = models.URLField(verbose_name='鍏憡閾炬帴', blank=True, null=True)
+    publish_date = models.DateField(verbose_name='鍙戝竷鏃堕棿', blank=True, null=True)
     
     ANNOUNCEMENT_TYPES = [
-        ('bidding', '招标公告'),
-        ('result', '结果公告'),
-        ('change', '变更公告'),
-        ('termination', '终止/废标公告'),
-        ('contract', '合同公示'),
-        ('acceptance', '验收公示'),
-        ('other', '其他公告'),
+        ('bidding', '鎷涙爣鍏憡'),
+        ('result', '缁撴灉鍏憡'),
+        ('change', '鍙樻洿鍏憡'),
+        ('termination', '缁堟/搴熸爣鍏憡'),
+        ('contract', '鍚堝悓鍏ず'),
+        ('acceptance', '楠屾敹鍏ず'),
+        ('other', '鍏朵粬鍏憡'),
     ]
-    announcement_type = models.CharField(max_length=50, choices=ANNOUNCEMENT_TYPES, default='bidding', verbose_name='公告类型')
+    announcement_type = models.CharField(max_length=50, choices=ANNOUNCEMENT_TYPES, default='bidding', verbose_name='鍏憡绫诲瀷')
     
-    # Simple region field or choices. Using CharField for flexibility as per plan, but could use choices if needed to match filter.
-    # Matching existing choices from other models is safer.
-    PROVINCE_CHOICES = [
-        ('全国', '全国'), ('北京', '北京'), ('天津', '天津'), ('河北', '河北'), 
-        ('山西', '山西'), ('内蒙古', '内蒙古'), ('辽宁', '辽宁'), ('吉林', '吉林'), 
-        ('黑龙江', '黑龙江'), ('上海', '上海'), ('江苏', '江苏'), ('浙江', '浙江'), 
-        ('安徽', '安徽'), ('福建', '福建'), ('江西', '江西'), ('山东', '山东'), 
-        ('河南', '河南'), ('湖北', '湖北'), ('湖南', '湖南'), ('广东', '广东'), 
-        ('广西', '广西'), ('海南', '海南'), ('重庆', '重庆'), ('四川', '四川'), 
-        ('贵州', '贵州'), ('云南', '云南'), ('西藏', '西藏'), ('陕西', '陕西'), 
-        ('甘肃', '甘肃'), ('青海', '青海'), ('宁夏', '宁夏'), ('新疆', '新疆'), 
-        ('香港', '香港'), ('澳门', '澳门'), ('台湾', '台湾')
-    ]
     region = models.CharField(max_length=50, choices=PROVINCE_CHOICES, default='全国', verbose_name='地区')
     
-    budget_amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name='预算金额(万元)', blank=True, null=True)
-    transaction_amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name='成交金额(万元)', blank=True, null=True)
-    buyer = models.CharField(max_length=255, verbose_name='采购单位', blank=True, null=True)
-    project_number = models.CharField(max_length=100, verbose_name='项目编号', blank=True, null=True)
+    budget_amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name='棰勭畻閲戦(涓囧厓)', blank=True, null=True)
+    transaction_amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name='鎴愪氦閲戦(涓囧厓)', blank=True, null=True)
+    buyer = models.CharField(max_length=255, verbose_name='閲囪喘鍗曚綅', blank=True, null=True)
+    project_number = models.CharField(max_length=100, verbose_name='椤圭洰缂栧彿', blank=True, null=True)
 
     panels = [
         FieldPanel('title'),
@@ -171,27 +185,16 @@ class ReportAnnouncement(Orderable):
 
 class ReportContract(Orderable):
     page = ParentalKey('ReportPage', on_delete=models.CASCADE, related_name='report_contracts')
-    title = models.CharField(max_length=255, verbose_name='合同名称')
-    url = models.URLField(verbose_name='详情链接', blank=True, null=True)
-    publish_date = models.DateField(verbose_name='发布时间', blank=True, null=True)
+    title = models.CharField(max_length=255, verbose_name='鍚堝悓鍚嶇О')
+    url = models.URLField(verbose_name='璇︽儏閾炬帴', blank=True, null=True)
+    publish_date = models.DateField(verbose_name='鍙戝竷鏃堕棿', blank=True, null=True)
     
-    PROVINCE_CHOICES = [
-        ('全国', '全国'), ('北京', '北京'), ('天津', '天津'), ('河北', '河北'), 
-        ('山西', '山西'), ('内蒙古', '内蒙古'), ('辽宁', '辽宁'), ('吉林', '吉林'), 
-        ('黑龙江', '黑龙江'), ('上海', '上海'), ('江苏', '江苏'), ('浙江', '浙江'), 
-        ('安徽', '安徽'), ('福建', '福建'), ('江西', '江西'), ('山东', '山东'), 
-        ('河南', '河南'), ('湖北', '湖北'), ('湖南', '湖南'), ('广东', '广东'), 
-        ('广西', '广西'), ('海南', '海南'), ('重庆', '重庆'), ('四川', '四川'), 
-        ('贵州', '贵州'), ('云南', '云南'), ('西藏', '西藏'), ('陕西', '陕西'), 
-        ('甘肃', '甘肃'), ('青海', '青海'), ('宁夏', '宁夏'), ('新疆', '新疆'), 
-        ('香港', '香港'), ('澳门', '澳门'), ('台湾', '台湾')
-    ]
     region = models.CharField(max_length=50, choices=PROVINCE_CHOICES, default='全国', verbose_name='地区')
-    city = models.CharField(max_length=50, verbose_name='城市', blank=True, null=True)
+    city = models.CharField(max_length=50, verbose_name='鍩庡競', blank=True, null=True)
     
-    budget_amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name='预算金额(万元)', blank=True, null=True)
-    transaction_amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name='成交金额(万元)', blank=True, null=True)
-    buyer = models.CharField(max_length=255, verbose_name='采购单位', blank=True, null=True)
+    budget_amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name='棰勭畻閲戦(涓囧厓)', blank=True, null=True)
+    transaction_amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name='鎴愪氦閲戦(涓囧厓)', blank=True, null=True)
+    buyer = models.CharField(max_length=255, verbose_name='閲囪喘鍗曚綅', blank=True, null=True)
 
     panels = [
         FieldPanel('title'),
@@ -207,18 +210,18 @@ class ReportContract(Orderable):
 
 class ReportBiddingDocument(Orderable):
     page = ParentalKey('ReportPage', on_delete=models.CASCADE, related_name='report_documents')
-    title = models.CharField(max_length=255, verbose_name='文件标题', blank=True, default='')
+    title = models.CharField(max_length=255, verbose_name='鏂囦欢鏍囬', blank=True, default='')
     source = models.CharField(max_length=100, verbose_name='来源', default='山东政府采购网', blank=True)
-    upload_time = models.DateField(verbose_name='上传时间', default=datetime.date.today)
-    file = models.FileField(upload_to='reports/documents/', verbose_name='文件', blank=True)
+    upload_time = models.DateField(verbose_name='涓婁紶鏃堕棿', default=datetime.date.today)
+    file = models.FileField(upload_to='reports/documents/', verbose_name='鏂囦欢', blank=True)
     
     DOC_TYPES = [
-        ('procurement', '采购文件'),
-        ('contract', '合同文件'),
-        ('acceptance', '验收文件'),
-        ('other', '其他文件'),
+        ('procurement', '閲囪喘鏂囦欢'),
+        ('contract', '鍚堝悓鏂囦欢'),
+        ('acceptance', '楠屾敹鏂囦欢'),
+        ('other', '鍏朵粬鏂囦欢'),
     ]
-    doc_type = models.CharField(max_length=50, choices=DOC_TYPES, default='procurement', verbose_name='文件类型')
+    doc_type = models.CharField(max_length=50, choices=DOC_TYPES, default='procurement', verbose_name='鏂囦欢绫诲瀷')
 
     def clean(self):
         print(f"DEBUG: ReportBiddingDocument clean() called. Title: {self.title}, File: {self.file}")
@@ -254,11 +257,11 @@ class ReportBiddingDocument(Orderable):
 
 class OngoingProject(Orderable):
     page = ParentalKey('ReportPage', on_delete=models.CASCADE, related_name='ongoing_projects')
-    project_name = models.CharField(max_length=255, verbose_name='项目名称', blank=True, null=True)
+    project_name = models.CharField(max_length=255, verbose_name='椤圭洰鍚嶇О', blank=True, null=True)
     bid_opening_time = models.DateField(verbose_name='开标时间', blank=True, null=True)
-    procurement_unit = models.CharField(max_length=255, verbose_name='采购单位', blank=True, null=True)
-    budget_amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name='预算(万元)', blank=True, null=True)
-    detail_link = models.URLField(verbose_name='详情链接', blank=True, null=True)
+    procurement_unit = models.CharField(max_length=255, verbose_name='閲囪喘鍗曚綅', blank=True, null=True)
+    budget_amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name='棰勭畻(涓囧厓)', blank=True, null=True)
+    detail_link = models.URLField(verbose_name='璇︽儏閾炬帴', blank=True, null=True)
 
     panels = [
         FieldPanel('project_name'),
@@ -271,28 +274,17 @@ class OngoingProject(Orderable):
 
 class PurchaseIntention(Orderable):
     page = ParentalKey('ReportPage', on_delete=models.CASCADE, related_name='purchase_intentions')
-    project_name = models.CharField(max_length=255, verbose_name='项目名称')
-    budget_amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name='预算(万元)', blank=True, null=True)
+    project_name = models.CharField(max_length=255, verbose_name='椤圭洰鍚嶇О')
+    budget_amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name='棰勭畻(涓囧厓)', blank=True, null=True)
     
-    PROVINCE_CHOICES = [
-        ('全国', '全国'), ('北京', '北京'), ('天津', '天津'), ('河北', '河北'), 
-        ('山西', '山西'), ('内蒙古', '内蒙古'), ('辽宁', '辽宁'), ('吉林', '吉林'), 
-        ('黑龙江', '黑龙江'), ('上海', '上海'), ('江苏', '江苏'), ('浙江', '浙江'), 
-        ('安徽', '安徽'), ('福建', '福建'), ('江西', '江西'), ('山东', '山东'), 
-        ('河南', '河南'), ('湖北', '湖北'), ('湖南', '湖南'), ('广东', '广东'), 
-        ('广西', '广西'), ('海南', '海南'), ('重庆', '重庆'), ('四川', '四川'), 
-        ('贵州', '贵州'), ('云南', '云南'), ('西藏', '西藏'), ('陕西', '陕西'), 
-        ('甘肃', '甘肃'), ('青海', '青海'), ('宁夏', '宁夏'), ('新疆', '新疆'), 
-        ('香港', '香港'), ('澳门', '澳门'), ('台湾', '台湾')
-    ]
     province = models.CharField(max_length=50, choices=PROVINCE_CHOICES, default='全国', verbose_name='地区（省份）')
-    city = models.CharField(max_length=50, verbose_name='城市', blank=True, null=True)
+    city = models.CharField(max_length=50, verbose_name='鍩庡競', blank=True, null=True)
     
-    procurement_category = models.CharField(max_length=100, verbose_name='采购品目', blank=True, null=True)
-    procurement_unit = models.CharField(max_length=255, verbose_name='采购单位', blank=True, null=True)
-    publish_time = models.DateField(verbose_name='发布时间', blank=True, null=True)
-    content = models.TextField(verbose_name='采购内容', blank=True, null=True)
-    detail_url = models.URLField(verbose_name='详情链接', blank=True, null=True)
+    procurement_category = models.CharField(max_length=100, verbose_name='閲囪喘鍝佺洰', blank=True, null=True)
+    procurement_unit = models.CharField(max_length=255, verbose_name='閲囪喘鍗曚綅', blank=True, null=True)
+    publish_time = models.DateField(verbose_name='鍙戝竷鏃堕棿', blank=True, null=True)
+    content = models.TextField(verbose_name='閲囪喘鍐呭', blank=True, null=True)
+    detail_url = models.URLField(verbose_name='璇︽儏閾炬帴', blank=True, null=True)
 
     panels = [
         FieldPanel('project_name'),
@@ -307,54 +299,96 @@ class PurchaseIntention(Orderable):
     ]
 
 
+def _parse_stat_count_value(raw_value):
+    digits = "".join(ch for ch in str(raw_value or "") if ch.isdigit())
+    try:
+        return int(digits) if digits else 0
+    except ValueError:
+        return 0
+
+
+def _split_analysis_keywords(raw_keywords):
+    if isinstance(raw_keywords, (list, tuple, set)):
+        raw_items = raw_keywords
+    else:
+        raw_items = [raw_keywords]
+
+    keywords = []
+    seen = set()
+    for item in raw_items:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        for token in re.split("[\u3001,\uff0c;\uff1b\\n\\r\\t]+", text):
+            keyword = token.strip()
+            if not keyword or keyword in seen:
+                continue
+            seen.add(keyword)
+            keywords.append(keyword[:100])
+    return keywords[:50]
+
+
+def _format_decimal_amount(value):
+    try:
+        amount = Decimal(str(value if value is not None else 0))
+    except (InvalidOperation, ValueError, TypeError):
+        amount = Decimal("0")
+    return f"{amount:,.2f}", amount
+
+
 class ReportPage(Page):
-    template = "reports/report_page_v3.html"
+    template = "reports/report_page.html"
     
     # Reports fields
-    """需求调查报告详情页"""
+    """闇€姹傝皟鏌ユ姤鍛婅鎯呴〉"""
 
-    """需求调查报告详情页"""
-    serial_number = models.CharField(max_length=50, blank=True, null=True, verbose_name='序号')
+    """闇€姹傝皟鏌ユ姤鍛婅鎯呴〉"""
+    serial_number = models.CharField(max_length=50, blank=True, null=True, verbose_name='搴忓彿')
     procurement_name = models.TextField(verbose_name='拟采购名称')
+    analysis_keywords = models.TextField(blank=True, default='', verbose_name='分析关键词')
     
     ANALYSIS_CHOICES = [
-        ('一键分析', '一键分析'),
-        ('高级分析', '高级分析'),
+        ('分析', '分析'),
     ]
     analysis_type = models.CharField(
         max_length=50,
         choices=ANALYSIS_CHOICES,
-        default='一键分析',
-        verbose_name='选择制度'
+        default='分析',
+        verbose_name='分析'
     )
-    analysis_time = models.DateTimeField(auto_now_add=True, verbose_name='分析时间')
+    analysis_time = models.DateTimeField(auto_now_add=True, verbose_name='鍒嗘瀽鏃堕棿')
     category = models.CharField(
         max_length=20,
         choices=REPORT_CATEGORY_CHOICES,
         default='default',
-        verbose_name='分类'
+        verbose_name='鍒嗙被'
     )
     
     # New analysis text fields
-    market_supply_analysis = models.TextField(blank=True, verbose_name='市场供给分析')
-    market_trend_analysis = models.TextField(blank=True, verbose_name='市场交易趋势')
-    ai_summary_analysis = models.TextField(blank=True, verbose_name='AI总结分析')
+    market_supply_analysis = models.TextField(blank=True, verbose_name='甯傚満渚涚粰鍒嗘瀽')
+    market_trend_analysis = models.TextField(blank=True, verbose_name='甯傚満浜ゆ槗瓒嬪娍')
+    ai_summary_analysis = models.TextField(blank=True, verbose_name='AI鎬荤粨鍒嗘瀽')
+    stat_announcement_count = models.CharField(max_length=50, blank=True, default='')
+    stat_budget_total = models.CharField(max_length=50, blank=True, default='')
+    stat_buyer_count = models.CharField(max_length=50, blank=True, default='')
+    stat_region_count = models.CharField(max_length=50, blank=True, default='')
+    stat_transaction_total = models.CharField(max_length=50, blank=True, default='')
 
-    summary = RichTextField(blank=True, verbose_name='报告摘要')
-    content = RichTextField(blank=True, verbose_name='报告内容')
+    summary = RichTextField(blank=True, verbose_name='鎶ュ憡鎽樿')
+    content = RichTextField(blank=True, verbose_name='鎶ュ憡鍐呭')
     is_public = models.BooleanField(
         default=False,
-        verbose_name='公共报告',
+        verbose_name='鍏叡鎶ュ憡',
         help_text='勾选后所有用户都能看到此报告（管理员修改后所有人同步更新）'
     )
 
     pdf_file = models.FileField(
         upload_to='reports/pdfs/',
         blank=True,
-        verbose_name='PDF文件'
+        verbose_name='PDF鏂囦欢'
     )
     
-    # 搜索配置
+    # 鎼滅储閰嶇疆
     search_fields = Page.search_fields + [
         index.SearchField('procurement_name'),
         index.SearchField('summary'),
@@ -369,19 +403,211 @@ class ReportPage(Page):
         FieldPanel('analysis_type'),
         FieldPanel('pdf_file'),
         FieldPanel('content'),
-        InlinePanel('report_announcements', label="采购公告"),
-        InlinePanel('report_contracts', label="采购合同"),
-        InlinePanel('report_documents', label="招标文件"),
-        InlinePanel('purchase_intentions', label="采购意向"),
-        InlinePanel('historical_projects', label="历史成交项目"),
+        InlinePanel('report_announcements', label="閲囪喘鍏憡"),
+        InlinePanel('report_contracts', label="閲囪喘鍚堝悓"),
+        InlinePanel('report_documents', label="鎷涙爣鏂囦欢"),
+        InlinePanel('purchase_intentions', label="閲囪喘鎰忓悜"),
+        InlinePanel('historical_projects', label="鍘嗗彶鎴愪氦椤圭洰"),
         InlinePanel('ongoing_projects', label="进行中项目"),
         FieldPanel('market_supply_analysis'),
         FieldPanel('market_trend_analysis'),
         FieldPanel('ai_summary_analysis'),
     ]
 
+    def get_context(self, request):
+        context = super().get_context(request)
+        announcements = self.report_announcements.all().order_by('-publish_date', '-id')
+        all_announcements = list(self.report_announcements.all())
+        context['announcements_page'] = Paginator(announcements, 15).get_page(
+            request.GET.get('ann_page', 1)
+        )
+        keyword_fallback = (self.procurement_name or self.title or '').strip()
+        report_keywords = _split_analysis_keywords(self.analysis_keywords)
+        if not report_keywords and keyword_fallback:
+            report_keywords = [keyword_fallback]
+
+        stat_fields = (
+            'stat_buyer_count',
+            'stat_region_count',
+            'stat_budget_total',
+            'stat_transaction_total',
+            'stat_announcement_count',
+        )
+        if not all(getattr(self, field_name, '') for field_name in stat_fields):
+            try:
+                from .views import _query_mysql_report_card_stats
+
+                card_stats = _query_mysql_report_card_stats(
+                    report_keywords,
+                    fallback_query=keyword_fallback,
+                )
+                for field_name, field_value in card_stats.items():
+                    if not getattr(self, field_name, ''):
+                        setattr(self, field_name, field_value)
+            except Exception:
+                pass
+
+        top_buyer_rows = []
+        try:
+            from .views import _query_mysql_top_buyers
+
+            top_buyer_rows = _query_mysql_top_buyers(
+                report_keywords,
+                fallback_query=keyword_fallback,
+                limit=10,
+            )
+        except Exception:
+            top_buyer_rows = []
+
+        if not top_buyer_rows:
+            buyer_totals = {}
+            for announcement in all_announcements:
+                buyer_name = (announcement.buyer or '').strip()
+                if not buyer_name:
+                    continue
+
+                buyer_entry = buyer_totals.setdefault(
+                    buyer_name,
+                    {
+                        'buyer_name': buyer_name,
+                        'regions': set(),
+                        'project_count': 0,
+                        'transaction_amount_value': Decimal('0'),
+                    },
+                )
+                buyer_entry['project_count'] += 1
+
+                region_name = (announcement.region or '').strip()
+                if region_name and region_name != '全国':
+                    buyer_entry['regions'].add(region_name)
+
+                _, amount_value = _format_decimal_amount(announcement.transaction_amount)
+                buyer_entry['transaction_amount_value'] += amount_value
+
+            top_buyer_rows = sorted(
+                buyer_totals.values(),
+                key=lambda item: (
+                    -item['project_count'],
+                    -item['transaction_amount_value'],
+                    item['buyer_name'],
+                ),
+            )[:10]
+
+            normalized_rows = []
+            for item in top_buyer_rows:
+                amount_display, amount_value = _format_decimal_amount(
+                    item['transaction_amount_value']
+                )
+                regions = sorted(item['regions'])
+                normalized_rows.append(
+                    {
+                        'buyer_name': item['buyer_name'],
+                        'region': regions[0] if len(regions) == 1 else '-',
+                        'project_count': item['project_count'],
+                        'transaction_amount_value': amount_value,
+                        'transaction_amount': amount_display,
+                    }
+                )
+            top_buyer_rows = normalized_rows
+
+        try:
+            from .views import _fill_top_buyer_regions_with_llm
+
+            top_buyer_rows = _fill_top_buyer_regions_with_llm(
+                top_buyer_rows,
+                displayed_limit=10,
+            )
+        except Exception:
+            pass
+
+        context['top_buyer_rows'] = top_buyer_rows
+
+        buyer_region_distribution = []
+        buyer_region_total_count = 0
+        buyer_region_unit = '\u5bb6'
+        try:
+            from .views import _query_mysql_region_distribution
+
+            buyer_region_distribution = _query_mysql_region_distribution(
+                report_keywords,
+                fallback_query=keyword_fallback,
+            )
+        except Exception:
+            buyer_region_distribution = []
+
+        if buyer_region_distribution:
+            buyer_region_total_count = sum(
+                int(item.get('value') or 0) for item in buyer_region_distribution
+            )
+        else:
+            unique_buyers = set()
+            buyer_region_map = defaultdict(set)
+            for announcement in all_announcements:
+                buyer_name = (announcement.buyer or '').strip()
+                if not buyer_name:
+                    continue
+
+                unique_buyers.add(buyer_name)
+                region_name = (announcement.region or '').strip()
+                if region_name and region_name != '\u5168\u56fd':
+                    buyer_region_map[region_name].add(buyer_name)
+
+            buyer_region_distribution = sorted(
+                [
+                    {
+                        'name': region_name,
+                        'value': len(region_buyers),
+                    }
+                    for region_name, region_buyers in buyer_region_map.items()
+                    if region_buyers
+                ],
+                key=lambda item: (-item['value'], item['name']),
+            )
+            buyer_region_total_count = len(unique_buyers) or _parse_stat_count_value(
+                self.stat_buyer_count
+            )
+            buyer_region_unit = '\u5bb6'
+
+        buyer_region_top_five = buyer_region_distribution[:5]
+        buyer_region_keyword_display = (
+            '\u3001'.join(report_keywords)
+            or keyword_fallback
+            or '\u76f8\u5173\u5173\u952e\u8bcd'
+        )
+
+        if buyer_region_top_five:
+            buyer_region_top_five_text = '\u3001'.join(
+                f"{item['name']}\uff08{item['value']}{buyer_region_unit}\uff09"
+                for item in buyer_region_top_five
+            )
+            buyer_region_summary_text = (
+                f"\u5173\u4e8e{buyer_region_keyword_display}\u7684\u5206\u6790\u62a5\u544a\uff0c"
+                f"\u57fa\u4e8e\u6269\u5145\u5173\u952e\u8bcd\u5339\u914d\u5230\u7684\u62db\u6807\u6570\u636e\uff0c"
+                f"\u5404\u7701\u4efd\u5171\u7edf\u8ba1{buyer_region_total_count}{buyer_region_unit}\uff0c"
+                f"\u524d\u4e94\u4e2a\u5730\u533a\u5206\u522b\u4e3a{buyer_region_top_five_text}\u3002"
+            )
+        else:
+            buyer_region_top_five_text = '\u6682\u65e0\u660e\u786e\u7701\u4efd\u6570\u636e'
+            buyer_region_summary_text = (
+                f"\u5173\u4e8e{buyer_region_keyword_display}\u7684\u5206\u6790\u62a5\u544a\uff0c"
+                "\u5f53\u524d\u6570\u636e\u6682\u672a\u5f62\u6210\u660e\u663e\u7684\u7701\u4efd\u5206\u5e03\u3002"
+            )
+
+        context['buyer_region_keyword_display'] = buyer_region_keyword_display
+        context['buyer_region_total_count'] = buyer_region_total_count
+        context['buyer_region_map_data'] = buyer_region_distribution
+        context['buyer_region_map_max'] = max(
+            [item['value'] for item in buyer_region_distribution],
+            default=1,
+        )
+        context['buyer_region_top_five'] = buyer_region_top_five
+        context['buyer_region_top_five_text'] = buyer_region_top_five_text
+        context['buyer_region_summary_text'] = buyer_region_summary_text
+        return context
+
 
     class Meta:
         verbose_name = '需求调查报告'
 
     parent_page_types = ['reports.ReportIndexPage']
+

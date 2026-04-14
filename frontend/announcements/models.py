@@ -6,6 +6,8 @@ from wagtail.admin.panels import FieldPanel
 from wagtail.search import index
 from django.core.paginator import Paginator
 from django.contrib.auth.models import User
+from django.utils.html import mark_safe
+import re
 
 
 # 公告类型选择
@@ -97,6 +99,34 @@ class AnnouncementIndexPage(Page):
 
     class Meta:
         verbose_name = '公告列表页'
+    
+    @staticmethod
+    def highlight_search_term(text, search_query):
+        """✨ 搜索词高亮显示
+        
+        将搜索词用 <mark> 标签包装，支持 case-insensitive
+        
+        Args:
+            text: 要高亮的文本
+            search_query: 搜索关键词
+            
+        Returns:
+            高亮后的 HTML 字符串
+        """
+        if not text or not search_query:
+            return text
+        
+        try:
+            # 使用正则表达式实现 case-insensitive 替换
+            pattern = re.compile(re.escape(search_query), re.IGNORECASE)
+            highlighted = pattern.sub(
+                lambda m: f'<mark class="search-highlight">{m.group()}</mark>',
+                str(text)
+            )
+            return mark_safe(highlighted)
+        except Exception as e:
+            # 如果高亮失败，返回原文本
+            return text
 
     def get_context(self, request):
         context = super().get_context(request)
@@ -107,7 +137,45 @@ class AnnouncementIndexPage(Page):
         # 获取所有公告
         announcements = AnnouncementPage.objects.live().child_of(self)
         
-        # 筛选逻辑
+        # ✅ 【修复方案A】搜索优先执行 - 在所有筛选之前应用搜索条件
+        # 这样可以确保搜索关键字不会被其他筛选条件过滤掉
+        from django.db.models import Q
+        search_query = request.GET.get('search', '').strip()
+        search_active = False
+        if search_query:
+            search_active = True
+            # 增强内容：搜索范围包括标题、内容、采购单位、代理机构
+            announcements = announcements.filter(
+                Q(title__icontains=search_query) | 
+                Q(content__icontains=search_query) |
+                Q(publisher__icontains=search_query) |  # 采购单位
+                Q(agency__icontains=search_query)        # 代理机构
+            )
+        
+        # 记录搜索日志 - 用于搜索建议功能
+        if search_active:
+            search_log, created = SearchLog.objects.get_or_create(
+                search_query=search_query.lower()
+            )
+            if not created:
+                search_log.increment(announcements.count())
+            else:
+                search_log.result_count = announcements.count()
+                search_log.save()
+            
+            # 记录用户搜索历史
+            if request.user.is_authenticated:
+                UserSearchHistory.objects.create(
+                    user=request.user,
+                    search_query=search_query,
+                    result_count=announcements.count()
+                )
+        
+        # 传递搜索状态给模板
+        context['search_active'] = search_active
+        context['search_query'] = search_query
+        
+        # 筛选逻辑 - 在搜索结果之上应用筛选条件
         # 地区筛选
         region = request.GET.get('region')
         if region and region != 'all':
@@ -172,12 +240,6 @@ class AnnouncementIndexPage(Page):
                 # 500万以上
                 announcements = announcements.filter(purchase_amount_value__gte=5000000)
         
-        # 搜索
-        search_query = request.GET.get('search')
-        if search_query:
-            from django.db.models import Q
-            announcements = announcements.filter(Q(title__icontains=search_query) | Q(content__icontains=search_query))
-        
         # 排序
         announcements = announcements.order_by('-date')
         
@@ -185,6 +247,19 @@ class AnnouncementIndexPage(Page):
         paginator = Paginator(announcements, 20)  # 每页20条
         page_number = request.GET.get('page', 1)
         page_obj = paginator.get_page(page_number)
+        
+        # ✨ 【优化1】搜索结果高亮显示 - 为搜索结果中的关键词添加高亮标签
+        if search_active:
+            for announcement in page_obj:
+                # 对标题进行高亮
+                announcement.highlighted_title = self.highlight_search_term(
+                    announcement.title, search_query
+                )
+                # 对内容进行高亮（仅显示前 200 字）
+                content_preview = str(announcement.content)[:200] if announcement.content else ''
+                announcement.highlighted_content = self.highlight_search_term(
+                    content_preview, search_query
+                )
         
         context['announcements'] = page_obj
         context['total_count'] = announcements.count()
@@ -311,3 +386,89 @@ class FavoriteAnnouncement(models.Model):
         verbose_name = '收藏的公告'
         verbose_name_plural = '收藏的公告'
         unique_together = ['user', 'announcement']
+
+
+# ============ 【中期优化】搜索功能增强模型 ============
+
+class SearchLog(models.Model):
+    """🔍 搜索日志 - 记录全平台搜索词热度
+    
+    用于:
+    - 生成搜索建议 (热词排序)
+    - 数据分析 (用户搜索行为)
+    """
+    search_query = models.CharField(
+        max_length=255, 
+        db_index=True,
+        verbose_name='搜索关键词'
+    )
+    search_count = models.IntegerField(
+        default=1,
+        verbose_name='搜索次数'
+    )
+    result_count = models.IntegerField(
+        default=0,
+        verbose_name='结果数量'
+    )
+    last_searched = models.DateTimeField(
+        auto_now=True,
+        verbose_name='最后搜索时间'
+    )
+    
+    class Meta:
+        verbose_name = '搜索日志'
+        verbose_name_plural = '搜索日志'
+        unique_together = ('search_query',)
+        ordering = ['-last_searched']
+        indexes = [
+            models.Index(fields=['-last_searched']),
+            models.Index(fields=['-search_count']),
+        ]
+    
+    def __str__(self):
+        return f"{self.search_query} ({self.search_count}次)"
+    
+    def increment(self, result_count=0):
+        """增加搜索计数"""
+        self.search_count += 1
+        self.result_count = result_count
+        self.save(update_fields=['search_count', 'result_count', 'last_searched'])
+
+
+class UserSearchHistory(models.Model):
+    """📋 用户搜索历史 - 记录用户个人搜索历史
+    
+    用于:
+    - 提供用户个人搜索历史查询
+    - 支持快速重复搜索
+    - 个性化推荐基础数据
+    """
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='search_history',
+        verbose_name='用户'
+    )
+    search_query = models.CharField(
+        max_length=255,
+        verbose_name='搜索关键词'
+    )
+    search_time = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='搜索时间'
+    )
+    result_count = models.IntegerField(
+        default=0,
+        verbose_name='结果数量'
+    )
+    
+    class Meta:
+        verbose_name = '用户搜索历史'
+        verbose_name_plural = '用户搜索历史'
+        ordering = ['-search_time']
+        indexes = [
+            models.Index(fields=['user', '-search_time']),
+        ]
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.search_query}"

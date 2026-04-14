@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__chrome-devtools__list_pages",
+      "Read(//d D:/Users/lcc94/Desktop/procurement_system/procurement_system/**)",
+      "Bash(sqlite3 db.sqlite3 \"SELECT COUNT\\(*\\) FROM reports_reportannouncement;\")",
+      "Bash(python:*)",
+      "Bash(curl -s http://localhost:8000/)",
+      "Bash(curl -s http://127.0.0.1:8001/docs)",
+      "mcp__chrome-devtools__new_page",
+      "Bash(pip install:*)",
+      "Bash(frontend/.venv/Scripts/python.exe frontend/manage.py runserver 0.0.0.0:8000)",
+      "Bash(pip list:*)",
+      "Bash(findstr -i django)",
+      "Bash(conda activate:*)"
+    ]
+  }
+}

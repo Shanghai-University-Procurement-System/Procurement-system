@@ -109,6 +109,7 @@ class MultiAgentState(TypedDict):
     quality_score: float  # 质量评分
     
     final_answer: Optional[str]  # 最终答案
+    mysql_data: List[Dict[str, Any]]  # MySQL 专家返回的结构化数据
     is_complete: bool  # 是否完成
     error: Optional[str]  # 错误信息
     
@@ -487,6 +488,7 @@ def create_initial_multi_agent_state(
         quality_score=0.0,
         
         final_answer=None,
+        mysql_data=[],
         is_complete=False,
         error=None,
         
@@ -508,4 +510,3 @@ def create_initial_multi_agent_state(
         agent_thoughts={},
         agent_observations={},
     )
-

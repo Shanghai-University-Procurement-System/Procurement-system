@@ -347,6 +347,11 @@ def format_sse(event: str, data: Dict[str, Any]) -> bytes:
     return f"event: {event}\ndata: {payload}\n\n".encode("utf-8")
 
 
+def _sse_json_safe(value: Any) -> Any:
+    """将 MySQL 行等转为可 JSON 序列化的结构（datetime/Decimal 等）。"""
+    return json.loads(json.dumps(value, ensure_ascii=False, default=str))
+
+
 @app.get("/health")
 async def health(settings: Settings = Depends(get_settings)) -> Dict[str, str]:
     _ = settings.deepseek_api_key
@@ -1312,6 +1317,7 @@ class MultiAgentChatResponse(BaseModel):
     thoughts: List[str] = Field(default_factory=list)
     observations: List[str] = Field(default_factory=list)
     quality_score: float = 0.0
+    mysql_data: List[Dict[str, Any]] = Field(default_factory=list)
     thread_id: str
     session_id: str
 
@@ -1377,6 +1383,7 @@ async def chat_with_multi_agent(
         thoughts=result.get("thoughts", []),
         observations=result.get("observations", []),
         quality_score=result.get("quality_score", 0.0),
+        mysql_data=result.get("mysql_data", []),
         thread_id=result.get("thread_id", ""),
         session_id=result.get("session_id", ""),
     )
@@ -1443,6 +1450,24 @@ async def chat_with_multi_agent_stream(
                                      {"agent": node_name, "data": node_data, "timestamp": event.get("timestamp")})
                     if "final_answer" in node_data and node_data["final_answer"]:
                         yield format_sse("assistant_final", {"content": node_data["final_answer"]})
+                elif event_type == "orchestrator_aggregate":
+                    # 前端 ai_analysis 依赖此事件中的 mysql_data 写入 Wagtail 采购公告
+                    agg = event.get("data", {}) or {}
+                    mysql_rows = agg.get("mysql_data", [])
+                    try:
+                        mysql_rows_safe = _sse_json_safe(mysql_rows) if mysql_rows else []
+                    except (TypeError, ValueError):
+                        mysql_rows_safe = []
+                    yield format_sse(
+                        "orchestrator_aggregate",
+                        {
+                            "data": {
+                                "final_answer": agg.get("final_answer"),
+                                "mysql_data": mysql_rows_safe,
+                            },
+                            "timestamp": event.get("timestamp"),
+                        },
+                    )
                 elif event_type == "completed":
                     yield format_sse("completed",
                                      {"thread_id": event.get("thread_id"), "timestamp": event.get("timestamp")})
@@ -1521,6 +1546,24 @@ async def chat_with_files_multi_agent_stream(
 
                     if "final_answer" in node_data and node_data["final_answer"]:
                         yield format_sse("assistant_final", {"content": node_data["final_answer"]})
+
+                elif event_type == "orchestrator_aggregate":
+                    agg = event.get("data", {}) or {}
+                    mysql_rows = agg.get("mysql_data", [])
+                    try:
+                        mysql_rows_safe = _sse_json_safe(mysql_rows) if mysql_rows else []
+                    except (TypeError, ValueError):
+                        mysql_rows_safe = []
+                    yield format_sse(
+                        "orchestrator_aggregate",
+                        {
+                            "data": {
+                                "final_answer": agg.get("final_answer"),
+                                "mysql_data": mysql_rows_safe,
+                            },
+                            "timestamp": event.get("timestamp"),
+                        },
+                    )
 
                 elif event_type == "completed":
                     yield format_sse("completed", {

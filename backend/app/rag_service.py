@@ -492,45 +492,52 @@ selected_keywords: List[str] = None
 
 async def expand_query_keywords(query: str, settings: Settings) -> List[str]:
     """
-    查询扩展：根据用户输入的问题，提取并扩充与招标文件相关的关键词。
-    返回 4-6 个关键词，供前端展示和用户二次筛选。
+    查询扩展：智能解析用户输入的问题，自动识别核心产品/行业关键词，并扩充同义词或细分品类。
+    返回 8-12 个关键词，供前端展示和用户二次筛选。
     """
     # 局部导入避免潜在的循环依赖
     from .graph_agent import invoke_llm, parse_json_from_llm
 
-    logger.info(f"🔍 正在为查询扩充关键词: '{query}'")
+    logger.info(f"🔍 正在为查询智能扩充关键词: '{query}'")
 
     prompt = f"""
-    你是一个专业的招投标业务助手。请根据用户的查询问题，扩充 4-6 个与【招标文件、招投标流程、采购】相关的核心关键词或同义词，以帮助增强知识库检索系统的准确性。
+    你是一个专业的采购与数据检索助手。请智能解析用户输入的问题，自动识别出问题中的【核心产品、行业或服务】实体，并为其生成 8-12 个高度相关的同义词、细分品类、上下级概念或行业专业术语。
+    这些扩充词将用于在数据库中进行全面检索，以防遗漏。
+
+    【示例】
+    用户问题：“帮我分析一下牛奶行业的采购趋势”
+    识别的核心词：“牛奶”
+    扩充关键词：["牛乳", "液态奶", "鲜牛奶", "纯牛奶", "灭菌乳", "巴氏奶", "常温奶", "全脂牛奶", "低脂牛奶", "脱脂牛奶"]
 
     用户问题：{query}
 
-    请仅返回一个 JSON 格式的字典，包含一个 "keywords" 列表，列表中包含 4-6 个字符串类型的关键词，不要有任何其他解释或 Markdown 标记。
+    请仅返回一个 JSON 格式的字典，包含一个 "keywords" 列表，列表中全部为字符串格式的扩充词。不要有任何其他解释、前缀或 Markdown 标记。
     示例格式：
     {{
-        "keywords": ["资质要求", "评标办法", "投标保证金", "履约周期"]
+        "keywords": ["关键词1", "关键词2", "关键词3"]
     }}
     """
 
     try:
         # 调用大模型生成关键词
+        # 适当调高 temperature (例如 0.4) 可以让模型发散思维，找出更多细分品类
         llm_response, _ = await invoke_llm(
             messages=[{"role": "user", "content": prompt}],
             settings=settings,
-            temperature=0.3,
-            max_tokens=200,
+            temperature=0.4,
+            max_tokens=300,
         )
 
         parsed_data = parse_json_from_llm(llm_response)
         keywords = parsed_data.get("keywords", [])
 
-        # 确保返回格式正确，并限制在 4-6 个以内
+        # 确保返回格式正确，并限制在最多 12 个以内，防止前端溢出
         if not isinstance(keywords, list):
             return []
 
-        logger.info(f"✅ 查询扩展完成，生成关键词: {keywords[:6]}")
-        return keywords[:6]
+        logger.info(f"✅ 查询扩展完成，生成联想词: {keywords[:12]}")
+        return keywords[:12]
 
     except Exception as e:
-        logger.error(f"❌ 查询扩展（关键词生成）失败: {e}", exc_info=True)
+        logger.error(f"❌ 查询扩展（联想词生成）失败: {e}", exc_info=True)
         return []
