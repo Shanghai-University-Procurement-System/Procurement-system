@@ -1,0 +1,783 @@
+{% extends "base.html" %}
+{% load static wagtailcore_tags %}
+
+{% block body_class %}report-detail-page{% endblock %}
+
+{% block content %}
+<style>
+    /* Global Cleanups */
+    ul,
+    li {
+        list-style: none !important;
+        margin: 0;
+        padding: 0;
+    }
+
+    /* Sidebar Styles */
+    .report-sidebar {
+        width: 260px !important;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        padding: 15px 0 !important;
+        height: fit-content;
+        border: 1px solid #f0f0f0;
+        overflow: hidden;
+    }
+
+    .nav-tabs {
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    .nav-item {
+        padding: 15px 24px;
+        cursor: pointer;
+        color: #555;
+        font-size: 15px;
+        border-left: 4px solid transparent;
+        transition: all 0.3s ease;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .nav-item:hover {
+        background-color: #f8fbff;
+        color: #2196f3;
+        padding-left: 28px;
+        /* Slight movement effect */
+    }
+
+    .nav-item.active {
+        background-color: #e3f2fd;
+        color: #1976d2;
+        border-left-color: #1976d2;
+        font-weight: 600;
+    }
+
+    /* Count Badge in Sidebar */
+    .nav-count {
+        font-size: 12px;
+        background: #eee;
+        padding: 2px 8px;
+        border-radius: 10px;
+        color: #888;
+    }
+
+    .nav-item.active .nav-count {
+        background: #afdcfd;
+        color: #1565c0;
+    }
+
+    /* Filter Styles */
+    .project-filter-bar {
+        background: white;
+        padding: 20px 25px !important;
+        border-bottom: 1px solid #f0f0f0;
+        margin-bottom: 25px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+    }
+
+    .criteria-row {
+        display: flex;
+        align-items: baseline;
+        margin-bottom: 15px;
+        line-height: 28px;
+    }
+
+    .criteria-label {
+        color: #888;
+        margin-right: 20px;
+        width: 70px;
+        font-weight: 500;
+        font-size: 14px;
+        flex-shrink: 0;
+    }
+
+    .criteria-options {
+        flex: 1;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .c-opt {
+        cursor: pointer;
+        padding: 4px 16px;
+        border-radius: 20px;
+        /* Capsule style */
+        font-size: 14px;
+        color: #555;
+        transition: all 0.2s ease;
+        border: 1px solid transparent;
+    }
+
+    .c-opt:hover {
+        color: #2196f3;
+        background: #e3f2fd;
+    }
+
+    .c-opt.active {
+        background: #2196f3;
+        color: white;
+        box-shadow: 0 2px 5px rgba(33, 150, 243, 0.3);
+    }
+
+    /* Search Input Styling */
+    .project-search-input {
+        padding: 10px 15px !important;
+        border: 1px solid #eee !important;
+        border-radius: 20px !important;
+        background: #f9f9f9;
+        transition: all 0.3s;
+        outline: none;
+    }
+
+    .project-search-input:focus {
+        border-color: #2196f3 !important;
+        background: white;
+        box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+    }
+
+    .project-search-btn {
+        border-radius: 20px !important;
+        padding: 8px 25px !important;
+        font-weight: 500;
+        letter-spacing: 1px;
+        transition: all 0.3s;
+    }
+
+    .project-search-btn:hover {
+        background: #00796b !important;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0, 150, 136, 0.3);
+    }
+
+    /* Announcement Tags */
+    .announcement-tag {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 12px;
+        margin-right: 10px;
+        font-weight: 500;
+        line-height: 1.2;
+    }
+
+    .tag-type {
+        background: #fff3e0;
+        color: #ff9800;
+        border: 1px solid #ffe0b2;
+    }
+
+    .tag-budget {
+        background: #ffebee;
+        color: #ff5722;
+        border: 1px solid #ffcdd2;
+    }
+
+    .tag-deal {
+        background: #e8f5e9;
+        color: #4caf50;
+        border: 1px solid #c8e6c9;
+    }
+
+    .tag-region {
+        background: #e0f7fa;
+        color: #009688;
+        border: 1px solid #b2ebf2;
+    }
+
+    .announcement-item {
+        transition: background-color 0.2s;
+        border-bottom: 1px solid #f9f9f9;
+    }
+
+    .announcement-item:hover {
+        background-color: #fafafa;
+    }
+
+    /* Supply Stats Grid */
+    .supply-stats-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 15px;
+        margin-bottom: 25px;
+    }
+    .stat-card {
+        border-radius: 8px;
+        padding: 20px 15px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+    }
+    .stat-info {
+        display: flex;
+        flex-direction: column;
+    }
+    .stat-title {
+        font-size: 13px;
+        color: #777;
+        margin-bottom: 8px;
+    }
+    .stat-value {
+        font-size: 18px;
+        font-weight: bold;
+        color: #333;
+    }
+    .stat-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .stat-icon svg {
+        width: 36px;
+        height: 36px;
+        fill: currentColor;
+    }
+    /* Card Styles */
+    .card-unit { background-color: #eaf4fe; }
+    .card-unit .stat-icon { color: #3b82f6; }
+    .card-region { background-color: #fff7ed; }
+    .card-region .stat-icon { color: #f59e0b; }
+    .card-budget { background-color: #fef2f2; }
+    .card-budget .stat-icon { color: #ef4444; }
+    .card-transaction { background-color: #e6fffa; }
+    .card-transaction .stat-icon { color: #14b8a6; }
+    .card-announcement { background-color: #ecfeff; }
+    .card-announcement .stat-icon { color: #06b6d4; }
+</style>
+
+<div class="page-header">
+    <div class="container">
+        <div class="breadcrumb">
+            <a href="/">首页</a> / <a href="/reports/">需求调查报告</a> / <span>{{ page.title }}</span>
+        </div>
+        <div class="report-header-actions" style="margin-top: 15px;">
+            <h1 style="font-size: 24px; margin: 0 0 15px 0; color: #fff; line-height: 1.4;">关于“{{ page.procurement_name }}”的分析报告</h1>
+            <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+                <div style="margin-bottom: 0; color: rgba(255,255,255,0.8); font-size: 14px;">
+                    <span class="badge"
+                        style="background:#fff; color:#2196f3; padding:2px 8px; border-radius:4px; margin-right:10px; font-weight: bold;">分析</span>
+                    <span>编号：{{ page.serial_number|default:"--" }}</span>
+                </div>
+                <div class="header-btns">
+                    {% if request.user.is_authenticated and request.user.is_staff %}
+                    <a href="/admin/pages/{{ page.id }}/edit/" class="btn btn-primary"
+                        style="background: #fff; color: #2196f3; border: none; padding: 5px 15px; border-radius: 4px; text-decoration: none; font-weight: bold;">项目数据调整</a>
+                    <a href="/admin/pages/{{ page.id }}/edit/" class="btn btn-outline"
+                        style="border: 1px solid rgba(255,255,255,0.6); color: #fff; padding: 5px 15px; border-radius: 4px; text-decoration: none; margin-left: 10px;">添加更多项目</a>
+                    {% endif %}
+                    {% if page.pdf_file %}
+                    <a href="{{ page.pdf_file.url }}" class="btn btn-primary"
+                        style="background: #fff; color: #2196f3; border: none; padding: 5px 15px; border-radius: 4px; text-decoration: none; margin-left: 10px; font-weight: bold;"
+                        download>下载/打印报告</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="report-container" style="background: #f5f5f5; padding: 25px 0;">
+    <div class="container" style="display: flex; gap: 25px;">
+        <!-- Sidebar -->
+        <div class="report-sidebar">
+            <ul class="nav-tabs">
+                <li class="nav-item active" onclick="switchTab(this, 'supply')">
+                    <span>市场供给分析</span>
+                </li>
+                <li class="nav-item" onclick="switchTab(this, 'announcements')">
+                    <span>采购公告</span>
+                    <span class="nav-count">{{ page.report_announcements.count }}</span>
+                </li>
+                <li class="nav-item" onclick="switchTab(this, 'ai')">
+                    <span>AI总结分析</span>
+                </li>
+            </ul>
+        </div>
+
+        <!-- Content Area -->
+        <div class="report-content-area"
+            style="flex: 1; background: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); padding: 25px; min-height: 800px;">
+
+            <!-- Tab: Market Supply -->
+            <div id="tab-supply" class="tab-content active">
+                <h3 style="border-left: 4px solid #2196f3; padding-left: 10px; margin-bottom: 20px;">市场供给分析</h3>
+                
+                <!-- Stats Grid -->
+                <div class="supply-stats-grid">
+                    <!-- 采购单位 -->
+                    <div class="stat-card card-unit">
+                        <div class="stat-info">
+                            <span class="stat-title">采购单位</span>
+                            <span class="stat-value" id="val-buyer-count">{{ page.stat_buyer_count|default:"--" }}</span>
+                        </div>
+                        <div class="stat-icon">
+                            <!-- Person Icon -->
+                            <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                        </div>
+                    </div>
+                    <!-- 采购地区 -->
+                    <div class="stat-card card-region">
+                        <div class="stat-info">
+                            <span class="stat-title">采购地区</span>
+                            <span class="stat-value" id="val-region-count">{{ page.stat_region_count|default:"--" }}</span>
+                        </div>
+                        <div class="stat-icon">
+                            <!-- Map Pin Icon -->
+                            <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+                        </div>
+                    </div>
+                    <!-- 预算金额 -->
+                    <div class="stat-card card-budget">
+                        <div class="stat-info">
+                            <span class="stat-title">预算金额</span>
+                            <span class="stat-value" id="val-budget-total">{{ page.stat_budget_total|default:"--" }}</span>
+                        </div>
+                        <div class="stat-icon">
+                            <!-- Bill/Yen Icon -->
+                            <svg viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2.5 11.5h-2v1.5h-2v-1.5H11v-2h6v-1.5h-6v-2h2V8h2v1.5h2v2h-6v1.5h6v1.5h-6v1.5h6v2.5z"/></svg>
+                        </div>
+                    </div>
+                    <!-- 成交总额 -->
+                    <div class="stat-card card-transaction">
+                        <div class="stat-info">
+                            <span class="stat-title">成交总额</span>
+                            <span class="stat-value" id="val-transaction-total">{{ page.stat_transaction_total|default:"--" }}</span>
+                        </div>
+                        <div class="stat-icon">
+                            <!-- Coin/Yen Icon -->
+                             <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm3 13.5h-2v1.5h-2v-1.5H9v-2h6v-1.5H9v-2h6v-1.5H9v-2h2V6h2v1.5h2v2h-6v1.5h6v1.5h-6v1.5h6v2.5z"/></svg>
+                        </div>
+                    </div>
+                    <!-- 采购公告 -->
+                    <div class="stat-card card-announcement">
+                        <div class="stat-info">
+                            <span class="stat-title">采购公告</span>
+                            <span class="stat-value" id="val-announcement-count">{{ page.stat_announcement_count|default:"--" }}</span>
+                        </div>
+                        <div class="stat-icon">
+                            <!-- Megaphone/Announcement Icon -->
+                             <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="analysis-content" style="line-height: 1.8; color: #444; min-height: 200px;">
+                    {{ page.market_supply_analysis|linebreaksbr }}
+                </div>
+
+                <!-- 各单位采购情况分析 -->
+                <div class="top-buyers-section" style="margin-top: 30px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 20px;">
+                        <h3 style="margin: 0; border-left: 4px solid #ff9800; padding-left: 10px; color: #333; font-size: 16px;">各单位采购情况分析</h3>
+                        <a href="javascript:void(0)" style="color: #666; font-size: 13px; text-decoration: none;">更多>></a>
+                    </div>
+                    {% if page.top_buyers.all %}
+                    <table class="project-table" style="width: 100%; border-collapse: collapse; text-align: center; font-size: 14px;">
+                        <thead>
+                            <tr style="background: #fafafa; color: #555;">
+                                <th style="padding: 12px; font-weight: normal; border-bottom: 1px solid #eee;">序号</th>
+                                <th style="padding: 12px; font-weight: normal; border-bottom: 1px solid #eee;">采购单位</th>
+                                <th style="padding: 12px; font-weight: normal; border-bottom: 1px solid #eee;">所属地区</th>
+                                <th style="padding: 12px; font-weight: normal; border-bottom: 1px solid #eee;">项目数(项)</th>
+                                <th style="padding: 12px; font-weight: normal; border-bottom: 1px solid #eee;">预算金额(万元)</th>
+                                <th style="padding: 12px; font-weight: normal; border-bottom: 1px solid #eee;">成交金额(万元)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for buyer in page.top_buyers.all|slice:":5" %}
+                            <tr style="border-bottom: 1px solid #f0f0f0;">
+                                <td style="padding: 12px;">
+                                    <span style="display: inline-block; width: 22px; height: 22px; background: #ffede0; color: #ff7a18; border-radius: 4px; line-height: 22px; font-weight: bold; font-size: 12px;">
+                                        {{ forloop.counter }}
+                                    </span>
+                                </td>
+                                <td style="padding: 12px; color: #333;">{{ buyer.buyer_name }}</td>
+                                <td style="padding: 12px; color: #666;">{{ buyer.region }}</td>
+                                <td style="padding: 12px; color: #666;">{{ buyer.project_count }}</td>
+                                <td style="padding: 12px; color: #333;">{{ buyer.budget_amount }}</td>
+                                <td style="padding: 12px; color: #333;">{{ buyer.transaction_amount }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div style="text-align: center; padding: 30px; color: #999; background: #fafafa; border-radius: 4px;">
+                        暂无各单位采购情况数据 (请在后台添加)
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- 各地区采购项目金额情况 -->
+                <div class="region-chart-section" style="margin-top: 30px;">
+                    <div style="border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 10px;">
+                        <h3 style="margin: 0; border-left: 4px solid #4ecdc4; padding-left: 10px; color: #333; font-size: 16px;">各地区采购项目金额情况</h3>
+                    </div>
+                    <div id="chart-region-amount" style="width: 100%; height: 350px;"></div>
+                </div>
+
+                <!-- 各地区采购项目数量情况 -->
+                <div class="region-chart-section" style="margin-top: 30px;">
+                    <div style="border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 10px;">
+                        <h3 style="margin: 0; border-left: 4px solid #ff8a65; padding-left: 10px; color: #333; font-size: 16px;">各地区采购项目数量情况</h3>
+                    </div>
+                    <div id="chart-region-count" style="width: 100%; height: 350px;"></div>
+                </div>
+
+                <!-- 成交项目数量占比 -->
+                <div class="pie-chart-section" style="margin-top: 30px;">
+                    <div style="border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 10px;">
+                        <h3 style="margin: 0; border-left: 4px solid #f0c75e; padding-left: 10px; color: #333; font-size: 16px;">成交项目数量占比</h3>
+                    </div>
+                    <div id="chart-supplier-count" style="width: 100%; height: 400px;"></div>
+                </div>
+
+                <!-- 成交项目成交金额占比 -->
+                <div class="pie-chart-section" style="margin-top: 30px;">
+                    <div style="border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 10px;">
+                        <h3 style="margin: 0; border-left: 4px solid #f0c75e; padding-left: 10px; color: #333; font-size: 16px;">成交项目成交金额占比</h3>
+                    </div>
+                    <div id="chart-supplier-amount" style="width: 100%; height: 400px;"></div>
+                </div>
+
+                <!-- 各采购方式项目数量占比 -->
+                <div class="pie-chart-section" style="margin-top: 30px;">
+                    <div style="border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 10px;">
+                        <h3 style="margin: 0; border-left: 4px solid #7b68ee; padding-left: 10px; color: #333; font-size: 16px;">各采购方式项目数量占比</h3>
+                    </div>
+                    <div id="chart-method-share" style="width: 100%; height: 400px;"></div>
+                </div>
+
+            </div>
+
+            <!-- Tab: Announcements -->
+            <div id="tab-announcements" class="tab-content" style="display: none;">
+                {% include "reports/partials/project_filter.html" with type="announcements" %}
+                <div id="announcements-list-wrapper">
+                    {% include "reports/partials/announcement_table.html" with announcements=page.report_announcements.all %}
+                </div>
+            </div>
+            <div id="tab-ai" class="tab-content" style="display: none;">
+                <h3 style="border-left: 4px solid #2196f3; padding-left: 10px; margin-bottom: 20px;">AI总结分析</h3>
+                <div class="analysis-content" style="line-height: 1.8; color: #444; min-height: 200px;">
+                    {{ page.ai_summary_analysis|linebreaksbr }}
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script>
+    function switchTab(element, tabName) {
+        // 1. Update Tab Styles
+        document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+        element.classList.add('active');
+
+        // 2. Show/Hide Content Areas
+        document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+        const activeTab = document.getElementById('tab-' + tabName);
+        if (activeTab) {
+            activeTab.style.display = 'block';
+            // Trigger animation
+            activeTab.style.opacity = '0';
+            setTimeout(() => {
+                activeTab.style.transition = 'opacity 0.3s ease';
+                activeTab.style.opacity = '1';
+            }, 10);
+        }
+    }
+
+    // Reuse existing fetch functions from logic
+    document.addEventListener('DOMContentLoaded', function () {
+        // Initial Tab State logic if needed
+        // Filter Click Logic
+        document.body.addEventListener('click', function (e) {
+            if (e.target.classList.contains('c-opt')) {
+                const container = e.target.closest('.criteria-options');
+                if (container) {
+                    container.querySelectorAll('.c-opt').forEach(el => el.classList.remove('active'));
+                    e.target.classList.add('active');
+                    triggerFetch(e.target);
+                }
+            }
+        });
+
+        // Search Btn
+        document.body.addEventListener('click', function (e) {
+            if (e.target.classList.contains('project-search-btn')) {
+                triggerFetch(e.target);
+            }
+        });
+
+        // Search Enter
+        document.body.addEventListener('keyup', function (e) {
+            if (e.target.classList.contains('project-search-input') && e.key === 'Enter') {
+                triggerFetch(e.target);
+            }
+        });
+    });
+
+    function triggerFetch(element) {
+        const tabContent = element.closest('.tab-content');
+        if (tabContent && tabContent.id === 'tab-announcements') {
+            fetchAnnouncements();
+        }
+    }
+
+    function fetchAnnouncements() {
+        const reportIdInput = document.querySelector('.report-id-input');
+        if (!reportIdInput) return;
+        const reportId = reportIdInput.value;
+        const tabContainer = document.getElementById('tab-announcements');
+
+        const params = getFilterParams(tabContainer);
+        // Special case for type
+        const typeFilterEl = tabContainer.querySelector('.filter-type .c-opt.active');
+        const typeFilter = typeFilterEl ? typeFilterEl.getAttribute('data-value') : 'all';
+
+        const url = `/api/report/filter/announcements/${reportId}/?q=${encodeURIComponent(params.q)}&time=${params.time}&amount=${params.amount}&region=${encodeURIComponent(params.region)}&type=${typeFilter}`;
+
+        fetch(url).then(res => res.text()).then(html => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const newList = doc.querySelector('.announcement-list-container');
+            if (newList) document.getElementById('announcements-list-wrapper').innerHTML = newList.outerHTML;
+        });
+    }
+
+    // Helper to get common params
+    function getFilterParams(container) {
+        const searchInput = container.querySelector('.project-search-input');
+        const searchQuery = searchInput ? searchInput.value : '';
+
+        const timeFilterEl = container.querySelector('.filter-time .c-opt.active');
+        const amountFilterEl = container.querySelector('.filter-amount .c-opt.active');
+        const regionFilterEl = container.querySelector('.filter-region .c-opt.active');
+
+        return {
+            q: searchQuery,
+            time: timeFilterEl ? timeFilterEl.getAttribute('data-value') : 'all',
+            amount: amountFilterEl ? amountFilterEl.getAttribute('data-value') : 'all',
+            region: regionFilterEl ? regionFilterEl.getAttribute('data-value') : 'All'
+        };
+    }
+</script>
+
+<!-- ECharts CDN -->
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // 从后端模型注入数据
+    var regionNames = [{% for item in page.region_purchase_data.all %}"{{ item.region_name }}"{% if not forloop.last %},{% endif %}{% endfor %}];
+    var regionAmounts = [{% for item in page.region_purchase_data.all %}{{ item.purchase_amount }}{% if not forloop.last %},{% endif %}{% endfor %}];
+    var regionCounts = [{% for item in page.region_purchase_data.all %}{{ item.project_count }}{% if not forloop.last %},{% endif %}{% endfor %}];
+
+    // 图表1: 各地区采购项目金额情况
+    var chartAmountDom = document.getElementById('chart-region-amount');
+    if (chartAmountDom && regionNames.length > 0) {
+        var chartAmount = echarts.init(chartAmountDom);
+        chartAmount.setOption({
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                formatter: function(params) {
+                    return params[0].name + '<br/>金额：' + params[0].value.toLocaleString() + ' 万元';
+                }
+            },
+            grid: { left: '3%', right: '4%', bottom: '12%', top: '40px', containLabel: true },
+            xAxis: {
+                type: 'category',
+                data: regionNames,
+                axisLabel: { interval: 0, rotate: regionNames.length > 15 ? 30 : 0, fontSize: 11, color: '#666' },
+                axisTick: { show: false },
+                axisLine: { lineStyle: { color: '#ddd' } }
+            },
+            yAxis: {
+                type: 'value',
+                name: '金额(万元)',
+                nameTextStyle: { color: '#999', fontSize: 11 },
+                axisLine: { show: false },
+                axisTick: { show: false },
+                splitLine: { lineStyle: { color: '#f0f0f0' } }
+            },
+            series: [{
+                type: 'bar',
+                data: regionAmounts,
+                barWidth: '50%',
+                itemStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: '#4ecdc4' },
+                        { offset: 1, color: '#88e8de' }
+                    ]),
+                    borderRadius: [3, 3, 0, 0]
+                },
+                emphasis: { itemStyle: { color: '#3dbdb5' } }
+            }]
+        });
+        window.addEventListener('resize', function() { chartAmount.resize(); });
+    } else if (chartAmountDom) {
+        chartAmountDom.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;">暂无地区采购金额数据</div>';
+    }
+
+    // 图表2: 各地区采购项目数量情况
+    var chartCountDom = document.getElementById('chart-region-count');
+    if (chartCountDom && regionNames.length > 0) {
+        var chartCount = echarts.init(chartCountDom);
+        chartCount.setOption({
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                formatter: function(params) {
+                    return params[0].name + '<br/>数量：' + params[0].value + ' 个';
+                }
+            },
+            grid: { left: '3%', right: '4%', bottom: '12%', top: '40px', containLabel: true },
+            xAxis: {
+                type: 'category',
+                data: regionNames,
+                axisLabel: { interval: 0, rotate: regionNames.length > 15 ? 30 : 0, fontSize: 11, color: '#666' },
+                axisTick: { show: false },
+                axisLine: { lineStyle: { color: '#ddd' } }
+            },
+            yAxis: {
+                type: 'value',
+                name: '数量(个)',
+                nameTextStyle: { color: '#999', fontSize: 11 },
+                axisLine: { show: false },
+                axisTick: { show: false },
+                splitLine: { lineStyle: { color: '#f0f0f0' } }
+            },
+            series: [{
+                type: 'bar',
+                data: regionCounts,
+                barWidth: '50%',
+                itemStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: '#ff8a65' },
+                        { offset: 1, color: '#ffb89e' }
+                    ]),
+                    borderRadius: [3, 3, 0, 0]
+                },
+                emphasis: { itemStyle: { color: '#e57a57' } }
+            }]
+        });
+        window.addEventListener('resize', function() { chartCount.resize(); });
+    } else if (chartCountDom) {
+        chartCountDom.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;">暂无地区采购数量数据</div>';
+    }
+
+    // === 饼图数据注入 ===
+    // 供应商数据
+    var supplierNames = [{% for s in page.top_suppliers.all %}"{{ s.supplier_name }}"{% if not forloop.last %},{% endif %}{% endfor %}];
+    var supplierCountPcts = [{% for s in page.top_suppliers.all %}{{ s.project_count_percent }}{% if not forloop.last %},{% endif %}{% endfor %}];
+    var supplierAmountPcts = [{% for s in page.top_suppliers.all %}{{ s.transaction_amount_percent }}{% if not forloop.last %},{% endif %}{% endfor %}];
+
+    // 采购方式数据
+    var methodNames = [{% for m in page.procurement_methods.all %}"{{ m.method_name }}"{% if not forloop.last %},{% endif %}{% endfor %}];
+    var methodPcts = [{% for m in page.procurement_methods.all %}{{ m.project_count_percent }}{% if not forloop.last %},{% endif %}{% endfor %}];
+
+    // 饼图通用配色
+    var pieColors = ['#5b9bd5', '#ed7d31', '#a5a5a5', '#ffc000', '#4472c4', '#70ad47'];
+    var supplierPieColors = ['#5b9bd5', '#ed7d31', '#a5a5a5', '#ffc000', '#70ad47', '#f0c75e'];
+
+    // 构建饼图数据（前5名 + 其它）
+    function buildPieData(names, pcts, otherLabel) {
+        var data = [];
+        var totalUsed = 0;
+        for (var i = 0; i < names.length; i++) {
+            data.push({ value: parseFloat(pcts[i]), name: names[i] + ' ' + pcts[i] + '%' });
+            totalUsed += parseFloat(pcts[i]);
+        }
+        var otherPct = Math.round((100 - totalUsed) * 100) / 100;
+        if (otherPct > 0) {
+            data.push({ value: otherPct, name: otherLabel + ' ' + otherPct + '%' });
+        }
+        return data;
+    }
+
+    // 通用饼图配置
+    function createPieOption(data, colors) {
+        return {
+            tooltip: {
+                trigger: 'item',
+                formatter: '{b}'
+            },
+            legend: {
+                show: false
+            },
+            series: [{
+                type: 'pie',
+                radius: ['0%', '70%'],
+                center: ['40%', '50%'],
+                avoidLabelOverlap: true,
+                itemStyle: { borderColor: '#fff', borderWidth: 2 },
+                label: {
+                    show: true,
+                    position: 'outside',
+                    formatter: '{b}',
+                    fontSize: 12,
+                    color: '#555'
+                },
+                labelLine: {
+                    show: true,
+                    length: 15,
+                    length2: 10,
+                    lineStyle: { color: '#ccc' }
+                },
+                emphasis: {
+                    itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0,0,0,0.3)' }
+                },
+                data: data,
+                color: colors
+            }]
+        };
+    }
+
+    // 饼图1: 成交项目数量占比
+    var chartCountDomPie = document.getElementById('chart-supplier-count');
+    if (chartCountDomPie && supplierNames.length > 0) {
+        var data1 = buildPieData(supplierNames, supplierCountPcts, '其它供应商');
+        var chart1 = echarts.init(chartCountDomPie);
+        // 最大那块（其它供应商）用金色
+        var colors1 = supplierPieColors.slice(0, supplierNames.length);
+        colors1.push('#f0c75e');
+        chart1.setOption(createPieOption(data1, colors1));
+        window.addEventListener('resize', function() { chart1.resize(); });
+    } else if (chartCountDomPie) {
+        chartCountDomPie.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;">暂无供应商数据</div>';
+    }
+
+    // 饼图2: 成交项目成交金额占比
+    var chartAmountDomPie = document.getElementById('chart-supplier-amount');
+    if (chartAmountDomPie && supplierNames.length > 0) {
+        var data2 = buildPieData(supplierNames, supplierAmountPcts, '其它供应商');
+        var chart2 = echarts.init(chartAmountDomPie);
+        var colors2 = supplierPieColors.slice(0, supplierNames.length);
+        colors2.push('#f0c75e');
+        chart2.setOption(createPieOption(data2, colors2));
+        window.addEventListener('resize', function() { chart2.resize(); });
+    } else if (chartAmountDomPie) {
+        chartAmountDomPie.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;">暂无供应商数据</div>';
+    }
+
+    // 饼图3: 各采购方式项目数量占比
+    var chartMethodDom = document.getElementById('chart-method-share');
+    if (chartMethodDom && methodNames.length > 0) {
+        var data3 = buildPieData(methodNames, methodPcts, '其他采购方式');
+        var chart3 = echarts.init(chartMethodDom);
+        var colors3 = ['#7b68ee', '#ffc000', '#70ad47', '#ed7d31', '#5b9bd5', '#a5a5a5'];
+        chart3.setOption(createPieOption(data3, colors3));
+        window.addEventListener('resize', function() { chart3.resize(); });
+    } else if (chartMethodDom) {
+        chartMethodDom.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;">暂无采购方式数据</div>';
+    }
+});
+</script>
+{% endblock %}

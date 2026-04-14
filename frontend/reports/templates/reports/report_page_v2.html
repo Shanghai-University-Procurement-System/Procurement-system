@@ -1,0 +1,397 @@
+{% extends "base.html" %}
+{% load static wagtailcore_tags %}
+
+{% block body_class %}report-detail-page{% endblock %}
+
+{% block content %}
+<style>
+    /* Sidebar Styles */
+    .report-sidebar {
+        width: 260px !important;
+        background: white;
+        border-radius: 4px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        /* Softer shadow */
+        padding: 0 !important;
+        height: fit-content;
+        border: 1px solid #eee;
+    }
+
+    .nav-tabs {
+        padding: 10px 0 !important;
+        margin: 0 !important;
+    }
+
+    .nav-item {
+        padding: 14px 24px;
+        cursor: pointer;
+        color: #555;
+        font-size: 15px;
+        border-left: 4px solid transparent;
+        transition: all 0.2s ease;
+        position: relative;
+    }
+
+    .nav-item:hover {
+        background-color: #f8fbff;
+        color: #2196f3;
+    }
+
+    .nav-item.active {
+        background-color: #e3f2fd;
+        /* Light blue bg */
+        color: #1976d2;
+        /* Darker blue text */
+        border-left-color: #1976d2;
+        font-weight: 600;
+    }
+
+    /* Add a subtle separator between items if desired, or keep clean */
+    .nav-item:not(:last-child) {
+        border-bottom: 1px solid #f9f9f9;
+    }
+</style>
+
+<div class="page-header">
+    <div class="container">
+        <div class="breadcrumb">
+            <a href="/">首页</a> / <a href="/reports/">需求调查报告</a> / <span>{{ page.title }}</span>
+        </div>
+        <div class="report-header-actions" style="margin-top: 15px;">
+            <h1 style="font-size: 24px; margin: 0 0 15px 0; color: #fff; line-height: 1.4;">关于“{{ page.procurement_name
+                }}”的分析报告</h1>
+            <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+                <div style="margin-bottom: 0; color: rgba(255,255,255,0.8); font-size: 14px;">
+                    <span class="badge"
+                        style="background:#fff; color:#2196f3; padding:2px 8px; border-radius:4px; margin-right:10px; font-weight: bold;">分析</span>
+                    <span>编号：{{ page.serial_number|default:"--" }}</span>
+                </div>
+                <div class="header-btns">
+                    {% if request.user.is_authenticated and request.user.is_staff %}
+                    <a href="/admin/pages/{{ page.id }}/edit/" class="btn btn-primary"
+                        style="background: #fff; color: #2196f3; border: none; padding: 5px 15px; border-radius: 4px; text-decoration: none; font-weight: bold;">项目数据调整</a>
+                    <a href="/admin/pages/{{ page.id }}/edit/" class="btn btn-outline"
+                        style="border: 1px solid rgba(255,255,255,0.6); color: #fff; padding: 5px 15px; border-radius: 4px; text-decoration: none; margin-left: 10px;">添加更多项目</a>
+                    {% endif %}
+                    {% if page.pdf_file %}
+                    <a href="{{ page.pdf_file.url }}" class="btn btn-primary"
+                        style="background: #fff; color: #2196f3; border: none; padding: 5px 15px; border-radius: 4px; text-decoration: none; margin-left: 10px; font-weight: bold;"
+                        download>下载/打印报告</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="report-container" style="background: #f5f5f5; padding: 20px 0;">
+    <div class="container" style="display: flex; gap: 20px;">
+        <!-- Sidebar -->
+        <div class="report-sidebar">
+            <ul class="nav-tabs">
+
+                <li class="nav-item active" onclick="switchTab(this, 'supply')">市场供给分析</li>
+                <li class="nav-item" onclick="switchTab(this, 'historical')">历史成交项目({{ page.historical_projects.count
+                    }})</li>
+                <li class="nav-item" onclick="switchTab(this, 'ongoing')">进行中项目({{ page.ongoing_projects.count }})</li>
+                <li class="nav-item" onclick="switchTab(this, 'intentions')">采购意向({{ page.purchase_intentions.count }})
+                </li>
+                <li class="nav-item" onclick="switchTab(this, 'announcements')">采购公告({{ page.report_announcements.count
+                    }})</li>
+                <li class="nav-item" onclick="switchTab(this, 'contracts')">采购合同(224)</li>
+                <li class="nav-item" onclick="switchTab(this, 'bidding')">招标文件(1195)</li>
+                <li class="nav-item" onclick="switchTab(this, 'ai')">AI总结分析</li>
+            </ul>
+        </div>
+
+        <!-- Content Area -->
+        <div class="report-content-area"
+            style="flex: 1; background: white; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 20px; min-height: 600px;">
+
+            <!-- Common Project Detail Sub-Interface Template (Reused by JS) -->
+            <template id="project-detail-template">
+                <div class="detail-sub-interface">
+                    <div style="margin-bottom: 20px;">
+                        <button onclick="hideProjectDetail(this)" class="btn btn-outline"
+                            style="border: 1px solid #ddd; padding: 5px 15px; border-radius: 4px; cursor: pointer; background: white;">&lt;
+                            返回列表</button>
+                    </div>
+                    <div style="background: #f9f9f9; padding: 20px; border-radius: 4px; margin-bottom: 20px;">
+                        <h3 style="margin-top: 0;">项目详情信息 (Mock)</h3>
+                        <p>这里显示项目的详细信息...</p>
+                    </div>
+                    <div class="screenshot-edit-section">
+                        <h4>编辑截图</h4>
+                        <div
+                            style="border: 2px dashed #ddd; padding: 40px; text-align: center; background: #fff; cursor: pointer;">
+                            <p style="color: #999;">点击此处上传或粘贴截图</p>
+                            <div class="screenshot-preview"
+                                style="display: flex; gap: 10px; justify-content: center; margin-top: 10px;">
+                                <!-- Mock Uploaded Images -->
+                                <div
+                                    style="width: 100px; height: 100px; background: #eee; display: flex; align-items: center; justify-content: center; color: #aaa;">
+                                    Img 1</div>
+                                <div
+                                    style="width: 100px; height: 100px; background: #eee; display: flex; align-items: center; justify-content: center; color: #aaa;">
+                                    +</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Tab: Market Supply -->
+            <div id="tab-supply" class="tab-content active">
+                <h3>市场供给分析</h3>
+                <div class="analysis-content"
+                    style="margin-top: 20px; line-height: 1.8; color: #333; min-height: 200px;">
+                    {{ page.market_supply_analysis|linebreaksbr|default:"暂无分析内容 (请在后台添加)" }}
+                </div>
+            </div>
+
+            <!-- Tab: Historical Projects -->
+            <div id="tab-historical" class="tab-content" style="display: none;">
+                <div class="view-list">
+                    {% include "reports/partials/project_filter.html" with type="historical" %}
+                    <div class="report-text-summary"
+                        style="margin: 20px 0; text-indent: 2em; line-height: 1.8; color: #333;">
+                        {{ page.content|richtext }}
+                    </div>
+                    <div id="historical-table-wrapper">
+                        {% include "reports/partials/project_table.html" with projects=page.historical_projects.all %}
+                    </div>
+                </div>
+                <div class="view-detail" style="display: none;"></div>
+            </div>
+
+            <!-- Tab: Ongoing Projects -->
+            <div id="tab-ongoing" class="tab-content" style="display: none;">
+                <div class="view-list">
+                    {% include "reports/partials/project_filter.html" with type="ongoing" %}
+                    <div id="ongoing-table-wrapper">
+                        {% include "reports/partials/ongoing_project_table.html" with projects=page.ongoing_projects.all
+                        %}
+                    </div>
+                </div>
+                <div class="view-detail" style="display: none;"></div>
+            </div>
+
+            <!-- Tab: Intentions -->
+            <div id="tab-intentions" class="tab-content" style="display: none;">
+                <div class="view-list">
+                    {% include "reports/partials/project_filter.html" with type="intentions" %}
+                    <div id="intentions-list-wrapper">
+                        {% include "reports/partials/intention_list.html" with intentions=page.purchase_intentions.all
+                        %}
+                    </div>
+                </div>
+                <div class="view-detail" style="display: none;"></div>
+            </div>
+
+            <!-- Tab: Announcements -->
+            <div id="tab-announcements" class="tab-content" style="display: none;">
+                <div class="view-list">
+                    {% include "reports/partials/project_filter.html" with type="announcements" %}
+                    <div id="announcements-list-wrapper">
+                        {% include "reports/partials/announcement_table.html" with
+                        announcements=page.report_announcements.all %}
+                    </div>
+                </div>
+                <div class="view-detail" style="display: none;"></div>
+            </div>
+
+            <!-- Tab: Contracts -->
+            <div id="tab-contracts" class="tab-content" style="display: none;">
+                <div class="view-list">
+                    {% include "reports/partials/project_filter.html" with type="contracts" %}
+                    {% include "reports/partials/project_table.html" %}
+                </div>
+                <div class="view-detail" style="display: none;"></div>
+            </div>
+
+            <!-- Tab: Bidding Files -->
+            <div id="tab-bidding" class="tab-content" style="display: none;">
+                <div class="view-list">
+                    {% include "reports/partials/project_filter.html" with type="bidding" %}
+                    {% include "reports/partials/project_table.html" %}
+                </div>
+                <div class="view-detail" style="display: none;"></div>
+            </div>
+
+            <!-- Tab: AI Summary -->
+            <div id="tab-ai" class="tab-content" style="display: none;">
+                <h3>AI总结分析</h3>
+                <div class="analysis-content"
+                    style="margin-top: 20px; line-height: 1.8; color: #333; min-height: 200px;">
+                    {{ page.ai_summary_analysis|linebreaksbr|default:"暂无分析内容 (请在后台添加)" }}
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script>
+    function switchTab(element, tabName) {
+        // 1. Update Tab Styles
+        document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+        element.classList.add('active');
+
+        // 2. Show/Hide Content Areas
+        document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+        const activeTab = document.getElementById('tab-' + tabName);
+        if (activeTab) {
+            activeTab.style.display = 'block';
+        }
+    }
+
+    // Interactive Filters Logic
+    document.addEventListener('DOMContentLoaded', function () {
+        // Filter Option Click
+        document.body.addEventListener('click', function (e) {
+            if (e.target.classList.contains('c-opt')) {
+                const container = e.target.closest('.criteria-options');
+                if (container) {
+                    container.querySelectorAll('.c-opt').forEach(el => el.classList.remove('active'));
+                    e.target.classList.add('active');
+
+                    // Trigger fetch based on active tab
+                    const tabContent = container.closest('.tab-content');
+                    if (tabContent) {
+                        if (tabContent.id === 'tab-historical') fetchHistoricalProjects();
+                        else if (tabContent.id === 'tab-ongoing') fetchOngoingProjects();
+                        else if (tabContent.id === 'tab-intentions') fetchPurchaseIntentions();
+                        else if (tabContent.id === 'tab-announcements') fetchAnnouncements();
+                    }
+                }
+            }
+        });
+
+        // Search Button Click
+        document.body.addEventListener('click', function (e) {
+            if (e.target.classList.contains('project-search-btn')) {
+                const tabContent = e.target.closest('.tab-content');
+                if (tabContent) {
+                    if (tabContent.id === 'tab-historical') fetchHistoricalProjects();
+                    else if (tabContent.id === 'tab-ongoing') fetchOngoingProjects();
+                    else if (tabContent.id === 'tab-intentions') fetchPurchaseIntentions();
+                    else if (tabContent.id === 'tab-announcements') fetchAnnouncements();
+                }
+            }
+        });
+
+        // Search Input Enter Key
+        document.body.addEventListener('keyup', function (e) {
+            if (e.target.classList.contains('project-search-input') && e.key === 'Enter') {
+                const tabContent = e.target.closest('.tab-content');
+                if (tabContent) {
+                    if (tabContent.id === 'tab-historical') fetchHistoricalProjects();
+                    else if (tabContent.id === 'tab-ongoing') fetchOngoingProjects();
+                    else if (tabContent.id === 'tab-intentions') fetchPurchaseIntentions();
+                    else if (tabContent.id === 'tab-announcements') fetchAnnouncements();
+                }
+            }
+        });
+    });
+
+    function fetchHistoricalProjects() {
+        const reportIdInput = document.querySelector('.report-id-input');
+        if (!reportIdInput) return;
+        const reportId = reportIdInput.value;
+        const tabContainer = document.getElementById('tab-historical');
+        const searchInput = tabContainer.querySelector('.project-search-input');
+        const searchQuery = searchInput ? searchInput.value : '';
+
+        const timeFilterEl = tabContainer.querySelector('.filter-time .c-opt.active');
+        const amountFilterEl = tabContainer.querySelector('.filter-amount .c-opt.active');
+        const timeFilter = timeFilterEl ? timeFilterEl.getAttribute('data-value') : 'all';
+        const amountFilter = amountFilterEl ? amountFilterEl.getAttribute('data-value') : 'all';
+
+        const url = `/api/report/filter/${reportId}/?q=${encodeURIComponent(searchQuery)}&time=${timeFilter}&amount=${amountFilter}`;
+
+        fetch(url).then(res => res.text()).then(html => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const newTable = doc.querySelector('.project-table-container');
+            if (newTable) document.getElementById('historical-table-wrapper').innerHTML = newTable.outerHTML;
+        });
+    }
+
+    function fetchOngoingProjects() {
+        const reportIdInput = document.querySelector('.report-id-input');
+        if (!reportIdInput) return;
+        const reportId = reportIdInput.value;
+        const tabContainer = document.getElementById('tab-ongoing');
+        const searchInput = tabContainer.querySelector('.project-search-input');
+        const searchQuery = searchInput ? searchInput.value : '';
+
+        const timeFilterEl = tabContainer.querySelector('.filter-time .c-opt.active');
+        const amountFilterEl = tabContainer.querySelector('.filter-amount .c-opt.active');
+        const timeFilter = timeFilterEl ? timeFilterEl.getAttribute('data-value') : 'all';
+        const amountFilter = amountFilterEl ? amountFilterEl.getAttribute('data-value') : 'all';
+
+        const url = `/api/report/filter/ongoing/${reportId}/?q=${encodeURIComponent(searchQuery)}&time=${timeFilter}&amount=${amountFilter}`;
+
+        fetch(url).then(res => res.text()).then(html => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const newTable = doc.querySelector('.ongoing-project-table-container');
+            if (newTable) document.getElementById('ongoing-table-wrapper').innerHTML = newTable.outerHTML;
+        });
+    }
+
+    function fetchPurchaseIntentions() {
+        const reportIdInput = document.querySelector('.report-id-input');
+        if (!reportIdInput) return;
+        const reportId = reportIdInput.value;
+        const tabContainer = document.getElementById('tab-intentions');
+        const searchInput = tabContainer.querySelector('.project-search-input');
+        const searchQuery = searchInput ? searchInput.value : '';
+
+        const timeFilterEl = tabContainer.querySelector('.filter-time .c-opt.active');
+        const amountFilterEl = tabContainer.querySelector('.filter-amount .c-opt.active');
+        const regionFilterEl = tabContainer.querySelector('.filter-region .c-opt.active');
+
+        const timeFilter = timeFilterEl ? timeFilterEl.getAttribute('data-value') : 'all';
+        const amountFilter = amountFilterEl ? amountFilterEl.getAttribute('data-value') : 'all';
+        const regionFilter = regionFilterEl ? regionFilterEl.getAttribute('data-value') : 'All';
+
+        const url = `/api/report/filter/intentions/${reportId}/?q=${encodeURIComponent(searchQuery)}&time=${timeFilter}&amount=${amountFilter}&region=${encodeURIComponent(regionFilter)}`;
+
+        fetch(url).then(res => res.text()).then(html => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const newList = doc.querySelector('.intention-list');
+            if (newList) document.getElementById('intentions-list-wrapper').innerHTML = newList.outerHTML;
+        });
+    }
+
+    function fetchAnnouncements() {
+        const reportIdInput = document.querySelector('.report-id-input');
+        if (!reportIdInput) return;
+        const reportId = reportIdInput.value;
+        const tabContainer = document.getElementById('tab-announcements');
+        const searchInput = tabContainer.querySelector('.project-search-input');
+        const searchQuery = searchInput ? searchInput.value : '';
+
+        const timeFilterEl = tabContainer.querySelector('.filter-time .c-opt.active');
+        const amountFilterEl = tabContainer.querySelector('.filter-amount .c-opt.active');
+        const regionFilterEl = tabContainer.querySelector('.filter-region .c-opt.active');
+        const typeFilterEl = tabContainer.querySelector('.filter-type .c-opt.active');
+
+        const timeFilter = timeFilterEl ? timeFilterEl.getAttribute('data-value') : 'all';
+        const amountFilter = amountFilterEl ? amountFilterEl.getAttribute('data-value') : 'all';
+        const regionFilter = regionFilterEl ? regionFilterEl.getAttribute('data-value') : 'All';
+        const typeFilter = typeFilterEl ? typeFilterEl.getAttribute('data-value') : 'all';
+
+        const url = `/api/report/filter/announcements/${reportId}/?q=${encodeURIComponent(searchQuery)}&time=${timeFilter}&amount=${amountFilter}&region=${encodeURIComponent(regionFilter)}&type=${typeFilter}`;
+
+        fetch(url).then(res => res.text()).then(html => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const newList = doc.querySelector('.announcement-list-container');
+            if (newList) document.getElementById('announcements-list-wrapper').innerHTML = newList.outerHTML;
+        });
+    }
+</script>
+{% endblock %}

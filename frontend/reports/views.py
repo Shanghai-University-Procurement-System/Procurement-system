@@ -21,7 +21,17 @@ from django.utils.text import slugify
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
+<<<<<<< HEAD
 from .models import HistoricalProject, OngoingProject, ReportIndexPage, ReportPage
+=======
+import httpx
+import json
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from wagtail.models import Page
+from .models import ReportIndexPage, ReportPage
+from custom_auth.tokens import build_fastapi_access_token
+>>>>>>> 48d28c3f09946013c2862ef3915a0fbfef97b955
 
 
 _PROCUREMENT_REGIONS = frozenset(
@@ -221,10 +231,21 @@ def _apply_amount_filter(queryset, field_name, raw_value):
                 f"{field_name}__gte": min_value,
                 f"{field_name}__lt": max_value,
             }
+<<<<<<< HEAD
         )
     except ValueError:
         return queryset
 
+=======
+            access_token = build_fastapi_access_token(request.user)
+            headers = {"Authorization": f"Bearer {access_token}"}
+
+            # 设置较长的 timeout，因为多智能体执行需要时间
+            with httpx.Client(timeout=300.0) as client:
+                response = client.post(fastapi_url, json=payload, headers=headers)
+                response.raise_for_status()
+                agent_result = response.json()
+>>>>>>> 48d28c3f09946013c2862ef3915a0fbfef97b955
 
 def _paginate_queryset(queryset, raw_page, per_page=15):
     paginator = Paginator(queryset, per_page)
@@ -918,7 +939,12 @@ def _build_report_body(content, created_count):
 
 
 def ai_analysis(request):
+<<<<<<< HEAD
     keyword = (request.GET.get("query") or request.GET.get("search") or "").strip()
+=======
+    """AI 分析中间页面"""
+    keyword = request.GET.get('search', '').strip()
+>>>>>>> 48d28c3f09946013c2862ef3915a0fbfef97b955
     if not keyword:
         keyword = "未指定关键词"
     return render(request, "reports/ai_analysis.html", {"keyword": keyword})

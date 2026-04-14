@@ -299,6 +299,7 @@ class PurchaseIntention(Orderable):
     ]
 
 
+<<<<<<< HEAD
 def _parse_stat_count_value(raw_value):
     digits = "".join(ch for ch in str(raw_value or "") if ch.isdigit())
     try:
@@ -334,6 +335,73 @@ def _format_decimal_amount(value):
     except (InvalidOperation, ValueError, TypeError):
         amount = Decimal("0")
     return f"{amount:,.2f}", amount
+=======
+class TopBuyerAnalysis(Orderable):
+    """各单位采购情况分析 (Top 5)"""
+    page = ParentalKey('ReportPage', related_name='top_buyers')
+    buyer_name = models.CharField(max_length=255, verbose_name="采购单位")
+    region = models.CharField(max_length=100, verbose_name="所属地区", blank=True, default="-")
+    project_count = models.IntegerField(verbose_name="项目数(项)", default=0)
+    budget_amount = models.CharField(max_length=50, verbose_name="预算金额(万元)", blank=True, default="-")
+    transaction_amount = models.CharField(max_length=50, verbose_name="成交金额(万元)", blank=True, default="-")
+
+    panels = [
+        FieldPanel('buyer_name'),
+        FieldPanel('region'),
+        FieldPanel('project_count'),
+        FieldPanel('budget_amount'),
+        FieldPanel('transaction_amount'),
+    ]
+
+
+class RegionPurchaseData(Orderable):
+    """各地区采购项目数据（用于图表展示）"""
+    page = ParentalKey('ReportPage', related_name='region_purchase_data')
+    region_name = models.CharField(max_length=50, verbose_name="地区名称", help_text="例如：浙江、湖南、四川")
+    purchase_amount = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="采购金额(万元)", default=0)
+    project_count = models.IntegerField(verbose_name="项目数量(个)", default=0)
+
+    panels = [
+        FieldPanel('region_name'),
+        FieldPanel('purchase_amount'),
+        FieldPanel('project_count'),
+    ]
+
+    class Meta(Orderable.Meta):
+        verbose_name = "地区采购数据"
+
+
+class TopSupplierShare(Orderable):
+    """成交前5名供应商市场份额占比"""
+    page = ParentalKey('ReportPage', related_name='top_suppliers')
+    supplier_name = models.CharField(max_length=255, verbose_name="供应商名称")
+    project_count_percent = models.DecimalField(max_digits=6, decimal_places=2, verbose_name="项目数量占比(%)", default=0)
+    transaction_amount_percent = models.DecimalField(max_digits=6, decimal_places=2, verbose_name="成交金额占比(%)", default=0)
+
+    panels = [
+        FieldPanel('supplier_name'),
+        FieldPanel('project_count_percent'),
+        FieldPanel('transaction_amount_percent'),
+    ]
+
+    class Meta(Orderable.Meta):
+        verbose_name = "供应商市场份额"
+
+
+class ProcurementMethodShare(Orderable):
+    """各采购方式项目数量占比"""
+    page = ParentalKey('ReportPage', related_name='procurement_methods')
+    method_name = models.CharField(max_length=100, verbose_name="采购方式", help_text="例如：公开招标、竞争性磋商、单一来源")
+    project_count_percent = models.DecimalField(max_digits=6, decimal_places=2, verbose_name="项目数量占比(%)", default=0)
+
+    panels = [
+        FieldPanel('method_name'),
+        FieldPanel('project_count_percent'),
+    ]
+
+    class Meta(Orderable.Meta):
+        verbose_name = "采购方式占比"
+>>>>>>> 48d28c3f09946013c2862ef3915a0fbfef97b955
 
 
 class ReportPage(Page):
@@ -365,6 +433,7 @@ class ReportPage(Page):
     )
     
     # New analysis text fields
+<<<<<<< HEAD
     market_supply_analysis = models.TextField(blank=True, verbose_name='甯傚満渚涚粰鍒嗘瀽')
     market_trend_analysis = models.TextField(blank=True, verbose_name='甯傚満浜ゆ槗瓒嬪娍')
     ai_summary_analysis = models.TextField(blank=True, verbose_name='AI鎬荤粨鍒嗘瀽')
@@ -376,6 +445,20 @@ class ReportPage(Page):
 
     summary = RichTextField(blank=True, verbose_name='鎶ュ憡鎽樿')
     content = RichTextField(blank=True, verbose_name='鎶ュ憡鍐呭')
+=======
+    market_supply_analysis = models.TextField(blank=True, verbose_name='市场供给分析')
+    ai_summary_analysis = models.TextField(blank=True, verbose_name='AI总结分析')
+
+    # 市场供给分析 - 统计卡片字段
+    stat_buyer_count = models.CharField(max_length=50, blank=True, default='', verbose_name='采购单位数量', help_text='例如：268 家')
+    stat_region_count = models.CharField(max_length=50, blank=True, default='', verbose_name='采购地区数量', help_text='例如：31 个地区')
+    stat_budget_total = models.CharField(max_length=50, blank=True, default='', verbose_name='预算金额', help_text='例如：153,674 万元')
+    stat_transaction_total = models.CharField(max_length=50, blank=True, default='', verbose_name='成交总额', help_text='例如：125,809 万元')
+    stat_announcement_count = models.CharField(max_length=50, blank=True, default='', verbose_name='采购公告数量', help_text='例如：4235 条')
+
+    summary = RichTextField(blank=True, verbose_name='报告摘要')
+    content = RichTextField(blank=True, verbose_name='报告内容')
+>>>>>>> 48d28c3f09946013c2862ef3915a0fbfef97b955
     is_public = models.BooleanField(
         default=False,
         verbose_name='鍏叡鎶ュ憡',
@@ -400,8 +483,8 @@ class ReportPage(Page):
         FieldPanel('is_public'),
         FieldPanel('serial_number'),
         FieldPanel('procurement_name'),
-        FieldPanel('analysis_type'),
         FieldPanel('pdf_file'),
+<<<<<<< HEAD
         FieldPanel('content'),
         InlinePanel('report_announcements', label="閲囪喘鍏憡"),
         InlinePanel('report_contracts', label="閲囪喘鍚堝悓"),
@@ -409,9 +492,20 @@ class ReportPage(Page):
         InlinePanel('purchase_intentions', label="閲囪喘鎰忓悜"),
         InlinePanel('historical_projects', label="鍘嗗彶鎴愪氦椤圭洰"),
         InlinePanel('ongoing_projects', label="进行中项目"),
+=======
+        InlinePanel('report_announcements', label="采购公告"),
+        InlinePanel('top_buyers', label="各单位采购情况分析 (前5名)"),
+        InlinePanel('region_purchase_data', label="各地区采购数据 (图表)"),
+        InlinePanel('top_suppliers', label="供应商市场份额占比 (前5名)"),
+        InlinePanel('procurement_methods', label="采购方式占比"),
+>>>>>>> 48d28c3f09946013c2862ef3915a0fbfef97b955
         FieldPanel('market_supply_analysis'),
-        FieldPanel('market_trend_analysis'),
         FieldPanel('ai_summary_analysis'),
+        FieldPanel('stat_buyer_count'),
+        FieldPanel('stat_region_count'),
+        FieldPanel('stat_budget_total'),
+        FieldPanel('stat_transaction_total'),
+        FieldPanel('stat_announcement_count'),
     ]
 
     def get_context(self, request):
